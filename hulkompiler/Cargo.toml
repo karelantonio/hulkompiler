@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 anyhow = { version = "1.0.95", features = ["backtrace"] }
+logos = "0.15.0"
 thiserror = "2.0.8"

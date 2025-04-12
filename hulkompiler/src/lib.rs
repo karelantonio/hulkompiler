@@ -1,0 +1,5 @@
+//! Lexer, parser and IR implementations for the HULK (https://github.com/matcom/hulk) programming
+//! language(s)
+
+/// The lexer module
+pub mod lex;
