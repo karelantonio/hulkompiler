@@ -39,6 +39,7 @@ pub struct BlockExpr {
 pub enum Expr {
     Num(f64),
     Id(String),
+    Str(String),
     BinOpExpr(BinOpExpr),
     FunCallExpr(FunCallExpr),
     BlockExpr(BlockExpr),
@@ -140,6 +141,27 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// A statement (?) is an expresion ended with a semicolon ;
+    /// <statement> ::= <expr> ';'
+    fn reduce_statement(&mut self) -> PResult<Expr> {
+        let was_block = matches!(self.remaining(), [Tk::LBrac, ..]);
+
+        let expr = self.reduce_expr()?;
+        match self.remaining() {
+            [Tk::Semicolon, ..] => {
+                self.take();
+                Ok(expr)
+            }
+            _ => {
+                if was_block {
+                    Ok(expr)
+                } else {
+                    Err(self.unexpected(&[Tk::Semicolon]))
+                }
+            }
+        }
+    }
+
     /// The root of the expression parsing
     /// <expr> ::= <ident> '(' <expr>,<expr>... ,? ')'
     ///          | <atom> <binop> <expr>
@@ -148,9 +170,28 @@ impl<'a> Parser<'a> {
         // Lookahead
         match self.remaining() {
             [Tk::Id, Tk::LPar, ..] => self.reduce_expr_fn_call(),
+            [Tk::LBrac, ..] => self.reduce_expr_block(),
             [_, op, ..] if self.map_operator(op.clone()).is_some() => self.reduce_expr_binop(),
             _ => self.reduce_expr_atom(),
         }
+    }
+
+    /// Reduce an expression block
+    /// <exp-block> ::= '{' <stmt> ... '}'
+    fn reduce_expr_block(&mut self) -> PResult<Expr> {
+        let _ = match self.remaining() {
+            [Tk::LBrac, ..] => self.take(),
+            _ => return Err(self.unexpected(&[Tk::LBrac])),
+        };
+
+        // Expect statements
+        let mut stm = Vec::new();
+        while !matches!(self.remaining(), [Tk::RBrac, ..]) {
+            stm.push(self.reduce_statement()?);
+        }
+        self.take();
+
+        Ok(Expr::BlockExpr(BlockExpr { exprs: stm }))
     }
 
     /// Reduce a binary operation
@@ -168,7 +209,6 @@ impl<'a> Parser<'a> {
         };
 
         let rhs = self.reduce_expr()?;
-
 
         Ok(Expr::BinOpExpr(BinOpExpr {
             op,
@@ -241,6 +281,10 @@ impl<'a> Parser<'a> {
                         err: e,
                     }
                 })?))
+            }
+            [Tk::Str, ..] => {
+                let stri = self.take();
+                Ok(Expr::Str(stri[1..stri.len() - 1].into()))
             }
             [Tk::Id, ..] => {
                 // Pop the identifier

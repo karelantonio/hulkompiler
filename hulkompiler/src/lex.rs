@@ -44,14 +44,26 @@ pub enum Tk {
     #[token(")")]
     RPar,
 
+    #[token("{")]
+    LBrac,
+
+    #[token("}")]
+    RBrac,
+
     #[token(",")]
     Comma,
+
+    #[token(";")]
+    Semicolon,
+
+    #[regex(r#"\"(\\"|[^"])*\""#)]
+    Str,
 
     // Identifiers
     #[regex(r"[a-zA-Z][a-zA-Z0-9_]*")]
     Id,
 
-    #[regex(r"0|[1-9][0-9]*")]
+    #[regex(r"0|[1-9][0-9]*(.[0-9]+)?")]
     Num,
 }
 
