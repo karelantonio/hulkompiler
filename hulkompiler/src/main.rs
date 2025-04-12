@@ -41,6 +41,8 @@ Options:
 
   -h, --help:
     Show this help message
+  -w, --wide
+    Print the data prittier
 
 HULKompiler {ver}
 "#
@@ -49,12 +51,15 @@ HULKompiler {ver}
 
 fn cmd_dumplex(binname: &str, mut args: Args) -> Result<()> {
     let mut file = None;
+    let mut wide = false;
 
     // Parse the remaining args
     while let Some(arg) = args.next() {
         if arg == "-h" || arg == "--help" {
             cmd_dumplex_help(binname);
             return Ok(());
+        } else if arg == "-w" || arg == "--wide" {
+            wide = true;
         } else if arg.starts_with("--") {
             bail!("Unknown arg: {arg}");
         } else if arg.starts_with("-") {
@@ -79,7 +84,11 @@ fn cmd_dumplex(binname: &str, mut args: Args) -> Result<()> {
         .map(|(_, tk, slic)| (tk, slic))
         .collect::<Vec<_>>();
     println!("Result:");
-    println!("{res:?}");
+    if wide {
+        println!("{res:#?}");
+    } else {
+        println!("{res:?}");
+    }
 
     Ok(())
 }
@@ -96,6 +105,8 @@ Options:
 
   -h, --help:
     Show this help message
+  -w, --wide
+    Print the data prettier
 
 HULKompiler {ver}
 "#
@@ -104,12 +115,15 @@ HULKompiler {ver}
 
 fn cmd_dumpast(binname: &str, mut args: Args) -> Result<()> {
     let mut file = None;
+    let mut wide = false;
 
     while let Some(arg) = args.next() {
         if arg == "-h" || arg == "--help" {
             // Print help and exit
             cmd_dumpast_help(binname);
             return Ok(());
+        } else if arg == "-w" || arg == "--wide" {
+            wide = true;
         } else if arg.starts_with("--") {
             bail!("Unknown arg: {arg}");
         } else if arg.starts_with("-") {
@@ -132,7 +146,11 @@ fn cmd_dumpast(binname: &str, mut args: Args) -> Result<()> {
     let res = hulkompiler::ast::Parser::parse(&content)?;
 
     println!("Result:");
-    println!("{res:?}");
+    if wide {
+        println!("{res:#?}");
+    } else {
+        println!("{res:?}");
+    }
 
     Ok(())
 }
