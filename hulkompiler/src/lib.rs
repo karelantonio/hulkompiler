@@ -3,3 +3,6 @@
 
 /// The lexer module
 pub mod lex;
+
+/// The parser module
+pub mod ast;

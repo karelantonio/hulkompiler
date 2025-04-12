@@ -14,7 +14,7 @@ pub enum LexError {
 }
 
 /// The tokens
-#[derive(Debug, PartialEq, Logos)]
+#[derive(Clone, Debug, PartialEq, Logos)]
 #[logos(skip r"[ \t\r\f]+")]
 pub enum Tk {
     // New line (ignored later)
@@ -34,8 +34,8 @@ pub enum Tk {
     #[token("/")]
     Slash,
 
-    #[token("%")]
-    Perc,
+    #[token("^")]
+    Power,
 
     // Other symbols
     #[token("(")]
@@ -43,6 +43,9 @@ pub enum Tk {
 
     #[token(")")]
     RPar,
+
+    #[token(",")]
+    Comma,
 
     // Identifiers
     #[regex(r"[a-zA-Z][a-zA-Z0-9_]*")]
