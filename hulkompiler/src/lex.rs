@@ -16,7 +16,7 @@ pub enum LexError {
 /// The tokens
 #[derive(Debug, PartialEq, Logos)]
 #[logos(skip r"[ \t\r\f]+")]
-pub enum Tk<'a> {
+pub enum Tk {
     // New line (ignored later)
     #[token("\n")]
     Nl,
@@ -46,14 +46,14 @@ pub enum Tk<'a> {
 
     // Identifiers
     #[regex(r"[a-zA-Z][a-zA-Z0-9_]*")]
-    Id(&'a str),
+    Id,
 
     #[regex(r"0|[1-9][0-9]*")]
-    Num(&'a str),
+    Num,
 }
 
-/// Tokenize the data and report any error found
-pub fn tokenize_data<'a>(data: &'a str) -> Result<Vec<(usize, Tk<'a>)>, LexError> {
+/// Tokenize the data and report any error found, return a list of: (line, token, slice)
+pub fn tokenize_data<'a>(data: &'a str) -> Result<Vec<(usize, Tk, &'a str)>, LexError> {
     let mut tk = Tk::lexer(data);
     let mut res = Vec::new();
     let (mut line, mut prevlen) = (1usize, 0usize);
@@ -73,7 +73,7 @@ pub fn tokenize_data<'a>(data: &'a str) -> Result<Vec<(usize, Tk<'a>)>, LexError
             continue;
         }
 
-        res.push((line, tok));
+        res.push((line, tok, tk.slice()));
     }
 
     Ok(res)
