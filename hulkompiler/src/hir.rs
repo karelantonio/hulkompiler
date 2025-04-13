@@ -79,6 +79,10 @@ impl Expr {
         }
         .clone()
     }
+
+    pub fn is_const(&self) -> bool {
+        matches!(self, Self::Const { .. })
+    }
 }
 
 /// A function ID (for references)
@@ -97,6 +101,12 @@ pub struct Fun {
 pub struct Unit {
     pub constpool: Vec<Const>,
     pub expr: Expr,
+}
+
+impl Unit {
+    pub fn lookup_const(&self, ConstId(cid): &ConstId) -> Option<&Const> {
+        self.constpool.get(*cid)
+    }
 }
 
 /// Errors that may happend during the type checking phase

@@ -211,8 +211,7 @@ fn cmd_emitpy(binname: &str, mut args: Args) -> Result<()> {
     let tr = hulkompiler::hir::TypeChecker::transform(&ast)?;
 
     // Emit C
-    println!("{tr:?}");
-    todo!();
+    println!("{}", hulkompiler::emit::py::Emitter::emit(&tr));
 
     Ok(())
 }
