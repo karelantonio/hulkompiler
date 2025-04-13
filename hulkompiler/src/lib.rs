@@ -6,3 +6,6 @@ pub mod lex;
 
 /// The parser module
 pub mod ast;
+
+/// The high-level intermediate representation
+pub mod hir;

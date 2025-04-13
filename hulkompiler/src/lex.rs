@@ -21,6 +21,16 @@ pub enum Tk {
     #[token("\n")]
     Nl,
 
+    // Keywords
+    #[token("function")]
+    Function,
+
+    #[token("let")]
+    Let,
+
+    #[token("in")]
+    In,
+
     // Operators
     #[token("+")]
     Add,
@@ -37,7 +47,13 @@ pub enum Tk {
     #[token("^")]
     Power,
 
+    #[token("@")]
+    Cat,
+
     // Other symbols
+    #[token("=>")]
+    RArrow,
+
     #[token("(")]
     LPar,
 

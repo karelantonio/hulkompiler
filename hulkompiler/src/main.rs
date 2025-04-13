@@ -18,10 +18,12 @@ Options:
     Show this help message
 
 Commands:
+  emit-c:
+    Emit the HIR (high level intermediate representation) as C code
   dump-lex:
-    Lex the file and dump (to stdout) the tokens
+    (DEBUG) Lex the file and dump (to stdout) the tokens
   dump-ast:
-    Parse the file and dump (to stdout) the AST
+    (DEBUG)Parse the file and dump (to stdout) the AST
 
 HULKompiler {ver}
 "#
@@ -49,6 +51,7 @@ HULKompiler {ver}
     );
 }
 
+/// Dump the lex result
 fn cmd_dumplex(binname: &str, mut args: Args) -> Result<()> {
     let mut file = None;
     let mut wide = false;
@@ -93,6 +96,7 @@ fn cmd_dumplex(binname: &str, mut args: Args) -> Result<()> {
     Ok(())
 }
 
+/// Help about dump-ast
 fn cmd_dumpast_help(binname: &str) {
     let ver = env!("CARGO_PKG_VERSION");
     println!(
@@ -113,6 +117,7 @@ HULKompiler {ver}
     );
 }
 
+/// Dump to stdout the abstract syntax tree
 fn cmd_dumpast(binname: &str, mut args: Args) -> Result<()> {
     let mut file = None;
     let mut wide = false;
@@ -155,6 +160,63 @@ fn cmd_dumpast(binname: &str, mut args: Args) -> Result<()> {
     Ok(())
 }
 
+/// Help about the emit-c command
+fn cmd_emitc_help(binname: &str) {
+    let ver = env!("CARGO_PKG_VERSION");
+    println!(
+        r#"
+Usage: {binname} emit-c [OPTIONS] FILE
+
+Write the HIR (high level intermediate representation) as C code
+
+Options:
+
+  -h, --help:
+    Show this help message
+
+HULKompiler {ver}
+"#
+    );
+}
+
+fn cmd_emitc(binname: &str, mut args: Args) -> Result<()> {
+    let mut file = None;
+
+    while let Some(arg) = args.next() {
+        if arg == "-h" || arg == "--help" {
+            cmd_emitc_help(binname);
+            return Ok(());
+        }else if arg.starts_with("--") {
+            bail!("Unknown arg: {arg}");
+        }else if arg.starts_with("-") {
+            bail!("Unknown option: {arg}");
+        }else if file.is_none() {
+            file = Some(arg);
+        }else {
+            bail!("Unexpected value: {arg}");
+        }
+    }
+
+    let Some(file) = file else {
+        bail!("No file specified");
+    };
+
+    // Read the contents
+    let content = std::fs::read_to_string(&file)?;
+
+    // Parse
+    let ast = hulkompiler::ast::Parser::parse(&content)?;
+
+    // Transform
+    let tr = hulkompiler::hir::TypeChecker::transform(&ast)?;
+
+    // Emit C
+    println!("{tr:?}");
+    todo!();
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     // Parse the args
     let mut args = args();
@@ -178,6 +240,8 @@ fn main() -> Result<()> {
             return cmd_dumplex(&binname, args);
         } else if arg == "dump-ast" {
             return cmd_dumpast(&binname, args);
+        } else if arg == "emit-c" {
+            return cmd_emitc(&binname, args);
         } else if arg.starts_with("--") {
             bail!("Unknown arg {arg}, try --help");
         } else if arg.starts_with("-") {

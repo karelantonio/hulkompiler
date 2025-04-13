@@ -144,6 +144,11 @@ impl<'a> Parser<'a> {
     /// A statement (?) is an expresion ended with a semicolon ;
     /// <statement> ::= <expr> ';'
     fn reduce_statement(&mut self) -> PResult<Expr> {
+        // Check if is a conditional or a loop
+        /*match self.remaining() {
+            [Tk::If]
+        }*/
+
         let was_block = matches!(self.remaining(), [Tk::LBrac, ..]);
 
         let expr = self.reduce_expr()?;
@@ -161,6 +166,8 @@ impl<'a> Parser<'a> {
             }
         }
     }
+
+    /// An IF statement
 
     /// The root of the expression parsing
     /// <expr> ::= <ident> '(' <expr>,<expr>... ,? ')'
@@ -269,7 +276,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Reduce an atom
-    /// <atom> ::= <number> | <ident>
+    /// <atom> ::= <number> | <ident> | <string>
     fn reduce_expr_atom(&mut self) -> PResult<Expr> {
         match self.remaining() {
             [Tk::Num, ..] => {
@@ -285,7 +292,7 @@ impl<'a> Parser<'a> {
             [Tk::Str, ..] => {
                 let stri = self.take();
                 Ok(Expr::Str(stri[1..stri.len() - 1].into()))
-            }
+            },
             [Tk::Id, ..] => {
                 // Pop the identifier
                 let id = self.take();
@@ -295,3 +302,4 @@ impl<'a> Parser<'a> {
         }
     }
 }
+
