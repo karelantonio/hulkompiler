@@ -18,8 +18,8 @@ Options:
     Show this help message
 
 Commands:
-  emit-c:
-    Emit the HIR (high level intermediate representation) as C code
+  emit-py:
+    Emit the HIR (high level intermediate representation) as Python (3) code
   dump-lex:
     (DEBUG) Lex the file and dump (to stdout) the tokens
   dump-ast:
@@ -161,13 +161,13 @@ fn cmd_dumpast(binname: &str, mut args: Args) -> Result<()> {
 }
 
 /// Help about the emit-c command
-fn cmd_emitc_help(binname: &str) {
+fn cmd_emitpy_help(binname: &str) {
     let ver = env!("CARGO_PKG_VERSION");
     println!(
         r#"
-Usage: {binname} emit-c [OPTIONS] FILE
+Usage: {binname} emit-py [OPTIONS] FILE
 
-Write the HIR (high level intermediate representation) as C code
+Write the HIR (high level intermediate representation) as Python (3) code
 
 Options:
 
@@ -179,12 +179,12 @@ HULKompiler {ver}
     );
 }
 
-fn cmd_emitc(binname: &str, mut args: Args) -> Result<()> {
+fn cmd_emitpy(binname: &str, mut args: Args) -> Result<()> {
     let mut file = None;
 
     while let Some(arg) = args.next() {
         if arg == "-h" || arg == "--help" {
-            cmd_emitc_help(binname);
+            cmd_emitpy_help(binname);
             return Ok(());
         }else if arg.starts_with("--") {
             bail!("Unknown arg: {arg}");
@@ -240,8 +240,8 @@ fn main() -> Result<()> {
             return cmd_dumplex(&binname, args);
         } else if arg == "dump-ast" {
             return cmd_dumpast(&binname, args);
-        } else if arg == "emit-c" {
-            return cmd_emitc(&binname, args);
+        } else if arg == "emit-py" {
+            return cmd_emitpy(&binname, args);
         } else if arg.starts_with("--") {
             bail!("Unknown arg {arg}, try --help");
         } else if arg.starts_with("-") {
