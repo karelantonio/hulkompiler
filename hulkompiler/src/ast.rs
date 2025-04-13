@@ -11,6 +11,7 @@ pub enum BinOp {
     Sub,
     Mult,
     Div,
+    Pwr,
 }
 
 /// Add two values
@@ -167,8 +168,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// An IF statement
-
     /// The root of the expression parsing
     /// <expr> ::= <ident> '(' <expr>,<expr>... ,? ')'
     ///          | <atom> <binop> <expr>
@@ -176,10 +175,8 @@ impl<'a> Parser<'a> {
     fn reduce_expr(&mut self) -> PResult<Expr> {
         // Lookahead
         match self.remaining() {
-            [Tk::Id, Tk::LPar, ..] => self.reduce_expr_fn_call(),
             [Tk::LBrac, ..] => self.reduce_expr_block(),
-            [_, op, ..] if self.map_operator(op.clone()).is_some() => self.reduce_expr_binop(),
-            _ => self.reduce_expr_atom(),
+            _ => self.reduce_expr_sum(),
         }
     }
 
@@ -201,27 +198,112 @@ impl<'a> Parser<'a> {
         Ok(Expr::BlockExpr(BlockExpr { exprs: stm }))
     }
 
-    /// Reduce a binary operation
-    fn reduce_expr_binop(&mut self) -> PResult<Expr> {
-        let lhs = self.reduce_expr_atom()?;
+    /// Reduce a sum of values
+    /// <sum> :: <mult> [ ('+'|'-') <mult> ]
+    fn reduce_expr_sum(&mut self) -> PResult<Expr> {
+        let lhs = self.reduce_expr_mult()?;
 
-        let op = if let [tok, ..] = self.remaining() {
-            let Some(op) = self.map_operator(tok.clone()) else {
-                return Err(self.unexpected(&[Tk::Add, Tk::Minus, Tk::Star, Tk::Slash]));
-            };
-            self.take();
-            op
-        } else {
-            return Err(self.unexpected(&[Tk::Add, Tk::Minus, Tk::Star, Tk::Slash]));
+        Ok(match self.remaining() {
+            [Tk::Add, ..] => {
+                self.take();
+                Expr::BinOpExpr(BinOpExpr {
+                    op: BinOp::Add,
+                    left: lhs.into(),
+                    right: self.reduce_expr_mult()?.into(),
+                })
+            }
+            [Tk::Minus, ..] => {
+                self.take();
+                Expr::BinOpExpr(BinOpExpr {
+                    op: BinOp::Sub,
+                    left: lhs.into(),
+                    right: self.reduce_expr_mult()?.into(),
+                })
+            }
+            _ => lhs,
+        })
+    }
+
+    /// Reduce a posible multiplication
+    /// <mult> ::= <factor-or-power> [ ('*'|'/') <mult> ] ...
+    fn reduce_expr_mult(&mut self) -> PResult<Expr> {
+        let b = self.reduce_expr_factor_or_power()?;
+
+        Ok(match self.remaining() {
+            [Tk::Star, ..] => {
+                self.take();
+                Expr::BinOpExpr(BinOpExpr {
+                    op: BinOp::Mult,
+                    left: b.into(),
+                    right: self.reduce_expr_mult()?.into(),
+                })
+            }
+            [Tk::Slash, ..] => {
+                self.take();
+                Expr::BinOpExpr(BinOpExpr {
+                    op: BinOp::Div,
+                    left: b.into(),
+                    right: self.reduce_expr_mult()?.into(),
+                })
+            }
+            _ => b,
+        })
+    }
+
+    /// Reduce an power expresion or just an atom
+    /// <factor-or-power> ::= <atom> [ ^ <atom> ]
+    fn reduce_expr_factor_or_power(&mut self) -> PResult<Expr> {
+        let b = self.reduce_expr_atom()?;
+        let _ = match self.remaining() {
+            [Tk::Power, ..] => self.take(),
+            _ => return Ok(b),
         };
-
-        let rhs = self.reduce_expr()?;
+        let e = self.reduce_expr_atom()?;
 
         Ok(Expr::BinOpExpr(BinOpExpr {
-            op,
-            left: lhs.into(),
-            right: rhs.into(),
+            op: BinOp::Pwr,
+            left: b.into(),
+            right: e.into(),
         }))
+    }
+
+    /// Reduce an atom
+    /// <atom> ::= <number> | <ident> | <string> | '(' <expr> ')' | <fn-call>
+    fn reduce_expr_atom(&mut self) -> PResult<Expr> {
+        match self.remaining() {
+            [Tk::Num, ..] => {
+                // Found number, advance and return gracefully
+                let sli = self.take();
+                Ok(Expr::Num(sli.parse().map_err(|e| {
+                    ParseError::ParseNum {
+                        value: sli.into(),
+                        err: e,
+                    }
+                })?))
+            }
+            [Tk::Str, ..] => {
+                let stri = self.take();
+                Ok(Expr::Str(stri[1..stri.len() - 1].into()))
+            }
+            [Tk::Id, Tk::LPar, ..] => self.reduce_expr_fn_call(),
+            [Tk::Id, ..] => {
+                // Pop the identifier
+                let id = self.take();
+                Ok(Expr::Id(id.into()))
+            }
+            [Tk::LPar, ..] => {
+                self.take();
+                let sub = self.reduce_expr()?;
+                // Expect )
+                let _ = match self.remaining() {
+                    [Tk::RPar, ..] => self.take(),
+                    _ => return Err(self.unexpected(&[Tk::RPar])),
+                };
+
+                Ok(sub)
+            }
+            _ => Err(self.unexpected(&[Tk::Num, Tk::Str, Tk::Id, Tk::LPar])),
+        }
     }
 
     /// Reduce a function call
@@ -274,32 +356,4 @@ impl<'a> Parser<'a> {
             args,
         }))
     }
-
-    /// Reduce an atom
-    /// <atom> ::= <number> | <ident> | <string>
-    fn reduce_expr_atom(&mut self) -> PResult<Expr> {
-        match self.remaining() {
-            [Tk::Num, ..] => {
-                // Found number, advance and return gracefully
-                let sli = self.take();
-                Ok(Expr::Num(sli.parse().map_err(|e| {
-                    ParseError::ParseNum {
-                        value: sli.into(),
-                        err: e,
-                    }
-                })?))
-            }
-            [Tk::Str, ..] => {
-                let stri = self.take();
-                Ok(Expr::Str(stri[1..stri.len() - 1].into()))
-            },
-            [Tk::Id, ..] => {
-                // Pop the identifier
-                let id = self.take();
-                Ok(Expr::Id(id.into()))
-            }
-            _ => Err(self.unexpected(&[Tk::Num])),
-        }
-    }
 }
-

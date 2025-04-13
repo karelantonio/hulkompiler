@@ -9,3 +9,6 @@ pub mod ast;
 
 /// The high-level intermediate representation
 pub mod hir;
+
+/// To emit code to other languages (transpile)
+pub mod emit;

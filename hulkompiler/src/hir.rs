@@ -93,6 +93,7 @@ pub struct Fun {
     pub body: Expr,
 }
 
+#[derive(Debug)]
 pub struct Unit {
     pub constpool: Vec<Const>,
     pub expr: Expr,
@@ -146,9 +147,14 @@ impl TypeChecker {
     }
 
     /// Transform the given expresion to the given unit
-    pub fn transform(stm: &crate::ast::Expr) -> TResult<Expr> {
+    pub fn transform(stm: &crate::ast::Expr) -> TResult<Unit> {
         // Transform this expr to our expr
-        Self::default().to_expr(stm)
+        let mut inst = Self::default();
+        let e = inst.to_expr(stm)?;
+        Ok(Unit {
+            constpool: inst.constpool,
+            expr: e,
+        })
     }
 
     fn to_op(&mut self, op: &crate::ast::BinOp) -> Op {
@@ -157,6 +163,7 @@ impl TypeChecker {
             crate::ast::BinOp::Sub => Op::Sub,
             crate::ast::BinOp::Mult => Op::Mul,
             crate::ast::BinOp::Div => Op::Div,
+            crate::ast::BinOp::Pwr => Op::Pow,
         }
     }
 
