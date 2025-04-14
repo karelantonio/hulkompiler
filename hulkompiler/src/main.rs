@@ -40,10 +40,8 @@ pub struct ArgParser {
     binname: String,
     cmd_prefix: String,
     desc: Option<String>,
-    tail: Option<String>,
     args: Vec<Arg>,
     values: Vec<Value>,
-    ptr: usize,
     procargs: Option<Args>,
     found_values: usize,
 }
@@ -53,7 +51,7 @@ impl ArgParser {
         self.procargs.ok_or(ArgError::NoArgs)
     }
 
-    fn new(name: &str, prefix: Option<&str>, desc: Option<&str>, tail: Option<&str>) -> Self {
+    fn new(name: &str, prefix: Option<&str>, desc: Option<&str>) -> Self {
         Self {
             binname: name.into(),
             cmd_prefix: match prefix {
@@ -61,7 +59,6 @@ impl ArgParser {
                 _ => "".into(),
             },
             desc: desc.map(|e| e.to_string()),
-            tail: tail.map(|e| e.to_string()),
             args: vec![Arg {
                 id: 0,
                 short: Some("-h"),
@@ -69,7 +66,6 @@ impl ArgParser {
                 help: Some("Show this help message"),
             }],
             values: Vec::new(),
-            ptr: 0,
             procargs: None,
             found_values: 0,
         }
@@ -201,7 +197,7 @@ fn cmd_dumplex(binname: &str, args: Args) -> Result<()> {
     let mut file = None;
     let mut wide = false;
 
-    let mut parser = ArgParser::new(binname, Some("dump-lex"), None, None);
+    let mut parser = ArgParser::new(binname, Some("dump-lex"), None);
     parser.feed(args);
     let o_wide = parser.push_arg(Some("-w"), "--wide", Some("Print the result wider"));
     let o_file = parser.push_value("file", Some("The source file"));
@@ -239,7 +235,7 @@ fn cmd_dumpast(binname: &str, args: Args) -> Result<()> {
     let mut file = None;
     let mut wide = false;
 
-    let mut parser = ArgParser::new(binname, Some("dump-ast"), None, None);
+    let mut parser = ArgParser::new(binname, Some("dump-ast"), None);
     parser.feed(args);
     let o_wide = parser.push_arg(Some("-w"), "--wide", Some("Print the result wider"));
     let o_file = parser.push_value("file", Some("The source file"));
@@ -273,8 +269,8 @@ fn cmd_dumpast(binname: &str, args: Args) -> Result<()> {
 fn cmd_emitpy(binname: &str, args: Args) -> Result<()> {
     let mut file = None;
 
-    let mut parser = ArgParser::new(binname, Some("emit-py"), None, None);
-    let p_file = parser.push_value("file", Some("The source file"));
+    let mut parser = ArgParser::new(binname, Some("emit-py"), None);
+    let _p_file = parser.push_value("file", Some("The source file"));
     parser.feed(args);
 
     while let Some((_arg, val)) = parser.next()? {
@@ -290,10 +286,10 @@ fn cmd_emitpy(binname: &str, args: Args) -> Result<()> {
     let ast = hulkompiler::ast::Parser::parse(&content)?;
 
     // Transform
-    //let tr = hulkompiler::hir::TypeChecker::transform(&ast)?;
+    let tr = hulkompiler::hir::TypeChecker::transform(&ast)?;
 
-    // Emit C
-    //println!("{}", hulkompiler::emit::py::Emitter::emit(&tr));
+    // Emit Py
+    println!("{}", hulkompiler::emit::py::Emitter::emit(&tr));
 
     Ok(())
 }
@@ -312,7 +308,7 @@ fn main() -> Result<()> {
         .map(OsStr::to_string_lossy)
         .unwrap_or("hulkompiler".into());
 
-    let mut parser = ArgParser::new(&binname, None, None, None);
+    let mut parser = ArgParser::new(&binname, None, None);
     let _opt_cmd = parser.push_value(
         "command",
         Some("Must be one of: emit-py, dump-ast, or dump-lex"),

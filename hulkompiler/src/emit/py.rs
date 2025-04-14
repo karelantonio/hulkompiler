@@ -18,10 +18,24 @@ pub struct PyFile {
     glob: Vec<Instr>,
 }
 
+const STD: &[&str] = &[
+    "# Standard library of HULK",
+    "from math import sin, cos, sqrt, exp, log",
+    "from random import uniform",
+    "def hk_print(arg:str)->object: print(arg)",
+    "def hk_sqrt(n:float)->float: return sqrt(n)",
+    "def hk_sin(n:float)->float: return sin(n)",
+    "def hk_cos(n:float)->float: return cos(n)",
+    "def hk_exp(n:float)->float: return exp(n)",
+    "def hk_log(b:float,a:float)->float: return log(a, base=b)",
+    "def hk_rand()->float: return uniform(0, 1)",
+    "# End of HULK standard library",
+];
+
 impl PyFile {
     /// Dump this as a python file
     pub fn dump(&self) -> String {
-        let mut res = Vec::new();
+        let mut res = STD.iter().map(|e| e.to_string()).collect::<Vec<_>>();
         // First the functions
         for fun in self.funcs.iter() {
             self.dump_fun(&fun, &mut res);
@@ -52,7 +66,7 @@ impl PyFile {
     pub fn dump_instrs(&self, depth: usize, isfun: bool, instrs: &[Instr], out: &mut Vec<String>) {
         let len = instrs.len();
         for (i, instr) in instrs.iter().enumerate() {
-            self.dump_instr(depth, isfun && i==len-1, instr, out);
+            self.dump_instr(depth, isfun && i == len - 1, instr, out);
         }
     }
 
@@ -79,11 +93,18 @@ impl<'a> Emitter<'a> {
     }
 
     fn generate(&mut self) -> String {
-        // The expressions
+        // The output
         let mut file = PyFile {
             funcs: vec![],
             glob: vec![Instr::Instr("pass".into())],
         };
+
+        // The functions
+        for fun in self.unit.funpool.iter() {
+            self.fun_to_py(&mut file, fun);
+        }
+
+        // The global expression
         file.glob = vec![self.expr_to_py(&mut file, &self.unit.expr)];
 
         file.dump()
@@ -92,7 +113,7 @@ impl<'a> Emitter<'a> {
     /// Convert our types to python types
     fn ty_to_py(&mut self, ty: &hir::Ty) -> &'static str {
         match ty {
-            hir::Ty::Void => "None",
+            hir::Ty::Obj => "object",
             hir::Ty::Str => "str",
             hir::Ty::Num => "float",
             hir::Ty::Bool => "bool",
@@ -114,8 +135,38 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// Export a function, return its name
-    fn fun_to_py(&mut self, outp: &mut PyFile, expr: &hir::Expr) -> String {
+    /// Export a function
+    fn fun_to_py(&mut self, outp: &mut PyFile, fun: &hir::Fun) {
+        let args = fun
+            .args
+            .iter()
+            .map(|e| format!("{}:{}", e.name, self.ty_to_py(&e.ty)))
+            .collect::<Vec<_>>();
+        let ret = self.ty_to_py(&fun.ty);
+
+        let code = match &fun.body {
+            hir::FunBody::Std => {
+                return; // This function is implemented on top of the file
+            }
+            hir::FunBody::Expr(hir::Expr::Block { insts, .. }) => {
+                insts.iter().map(|e| self.expr_to_py(outp, e)).collect()
+            }
+            hir::FunBody::Expr(e) => vec![self.expr_to_py(outp, &e)],
+            e => panic!("Dont know how to proceed (known body type: {:?})", e),
+        };
+
+        let fun = PyFunc {
+            name: format!("hk_{}", fun.name),
+            args,
+            ret: ret.into(),
+            code,
+        };
+
+        outp.funcs.push(fun);
+    }
+
+    /// Export a block as a function, return its name
+    fn block_as_py_fun(&mut self, outp: &mut PyFile, expr: &hir::Expr) -> String {
         let name = self.make_function_name();
 
         // Build the code
@@ -198,7 +249,7 @@ impl<'a> Emitter<'a> {
                 Instr::Instr(format!("hk_{}({})", fun.name, args.join(",")))
             }
             hir::Expr::Block { ty: _, insts: _ } => {
-                Instr::Instr(format!("{}()", self.fun_to_py(outp, expr)))
+                Instr::Instr(format!("{}()", self.block_as_py_fun(outp, expr)))
             }
         }
     }

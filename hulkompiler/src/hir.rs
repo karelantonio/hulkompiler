@@ -1,7 +1,7 @@
 //! The high-level intermediate representation of the language
 //! Makes easy the type-checking phase :)
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 /// A constant id (for references)
@@ -26,7 +26,7 @@ pub struct Const {
 /// A type (may be inside a type pool)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ty {
-    Void, /* Nothing */
+    Obj,
     Num,
     Str,
     Bool,
@@ -103,13 +103,20 @@ pub enum FunBody {
     Native, // To make things more interesting :)
 }
 
+/// A function argument
+#[derive(Debug, Clone)]
+pub struct FunArg {
+    pub name: String,
+    pub ty: Ty,
+}
+
 /// A function
 #[derive(Debug)]
 pub struct Fun {
     pub id: FunId,
     pub name: String,
     pub ty: Ty,
-    pub args: Vec<Ty>,
+    pub args: Vec<FunArg>,
     pub body: FunBody,
 }
 
@@ -152,8 +159,33 @@ pub enum TypeError {
         found: usize,
     },
 
-    #[error("{idx}th argument type mismatch, expected: {exp:?}, found: {found:?}")]
-    FnArgMismatch { idx: usize, exp: Ty, found: Ty },
+    #[error("{idx}th argument ({name}) type mismatch, expected: {exp:?}, found: {found:?}")]
+    FnArgMismatch {
+        idx: usize,
+        name: String,
+        exp: Ty,
+        found: Ty,
+    },
+
+    #[error(
+        "No global expression found, try print(\"Hello world\"); at the bottom of your program"
+    )]
+    NoGlobExpr,
+
+    #[error("Multiple global expressions were found, but only 1 is allowed")]
+    MultipleGlobExpr,
+
+    #[error("A function with the same name ({name}) is already defined, try another name or use a prefix")]
+    DupdFun { name: String },
+
+    #[error("Function arguments with no type are not supported yet, try specifying the type: `..{name}: Smthn`")]
+    FnArgNoType { name: String },
+
+    #[error("Function without return type are not supported yet: {name}, try specifying a type: `): Smthn`")]
+    FnNoRetType { name: String },
+
+    #[error("Function return mismatch: declared return type: {ret}, but body returns: {bod}")]
+    FnRetMismatch { ret: String, bod: String },
 }
 
 type TResult<T> = Result<T, TypeError>;
@@ -165,6 +197,7 @@ pub struct TypeChecker {
     constpool: Vec<Const>,
     funpool: Vec<Fun>,
     reverse_fun: BTreeMap<String, FunId>,
+    stubd: BTreeSet<usize>,
 }
 
 impl TypeChecker {
@@ -189,7 +222,7 @@ impl TypeChecker {
         ConstId(id)
     }
 
-    fn add_std_fun(&mut self, name: &str, ret: Ty, args: &[Ty]) {
+    fn add_stub_fun(&mut self, name: &str, ret: Ty, args: &[FunArg], std: bool) -> usize {
         let newid = self.funpool.len();
         let fun = Fun {
             id: FunId(newid),
@@ -200,29 +233,180 @@ impl TypeChecker {
         };
         self.funpool.push(fun);
         self.reverse_fun.insert(name.into(), FunId(newid));
+
+        if !std {
+            self.stubd.insert(newid);
+        }
+
+        newid
+    }
+
+    fn is_stub(&mut self, FunId(fid): &FunId) -> bool {
+        self.stubd.contains(fid)
+    }
+
+    fn unstub(&mut self, FunId(fid): &FunId) {
+        self.stubd.remove(fid);
+    }
+
+    fn update_fn_body(&mut self, FunId(fid): &FunId, body: FunBody) {
+        self.funpool[*fid].body = body;
+    }
+
+    fn str_to_ty(&mut self, ty: &str) -> Option<Ty> {
+        Some(if ty == "Number" {
+            Ty::Num
+        } else if ty == "String" {
+            Ty::Str
+        } else if ty == "Boolean" {
+            Ty::Bool
+        } else if ty == "Object" {
+            Ty::Obj
+        } else {
+            return None;
+        })
     }
 
     /// Transform the given expresion to the given unit
-    pub fn transform(stm: &crate::ast::Expr) -> TResult<Unit> {
+    pub fn transform(ast: &[crate::ast::RootElem]) -> TResult<Unit> {
         // Transform this expr to our expr
-        let mut inst = Self::default();
+        let mut tr = Self::default();
 
         // Add the Standard library functions
-        inst.add_std_fun("print", Ty::Void, &[Ty::Str]);
+        tr.add_stub_fun(
+            "print",
+            Ty::Obj,
+            &[FunArg {
+                name: "arg0".into(),
+                ty: Ty::Str,
+            }],
+            true,
+        );
         // -- math functions --
-        inst.add_std_fun("sqrt", Ty::Num, &[Ty::Num]);
-        inst.add_std_fun("sin", Ty::Num, &[Ty::Num]);
-        inst.add_std_fun("cos", Ty::Num, &[Ty::Num]);
-        inst.add_std_fun("exp", Ty::Num, &[Ty::Num]);
-        inst.add_std_fun("log", Ty::Num, &[Ty::Num, Ty::Num]);
-        inst.add_std_fun("rand", Ty::Num, &[]);
+        tr.add_stub_fun(
+            "sqrt",
+            Ty::Num,
+            &[FunArg {
+                name: "arg0".into(),
+                ty: Ty::Num,
+            }],
+            true,
+        );
+        tr.add_stub_fun(
+            "sin",
+            Ty::Num,
+            &[FunArg {
+                name: "arg0".into(),
+                ty: Ty::Num,
+            }],
+            true,
+        );
+        tr.add_stub_fun(
+            "cos",
+            Ty::Num,
+            &[FunArg {
+                name: "arg0".into(),
+                ty: Ty::Num,
+            }],
+            true,
+        );
+        tr.add_stub_fun(
+            "exp",
+            Ty::Num,
+            &[FunArg {
+                name: "arg0".into(),
+                ty: Ty::Num,
+            }],
+            true,
+        );
+        tr.add_stub_fun(
+            "log",
+            Ty::Num,
+            &[
+                FunArg {
+                    name: "arg0".into(),
+                    ty: Ty::Num,
+                },
+                FunArg {
+                    name: "arg1".into(),
+                    ty: Ty::Num,
+                },
+            ],
+            true,
+        );
+        tr.add_stub_fun("rand", Ty::Num, &[], true);
 
-        let e = inst.to_expr(stm)?;
+        // First, add the stub functions
+        tr.create_fun_stubs(ast)?;
+
+        // Now create the functions
+        for elem in ast {
+            let crate::ast::RootElem::FunDecl(fun) = elem else {
+                continue;
+            };
+
+            tr.process_fn(&fun)?;
+        }
+
+        // Now the actual global expression
+        let mut glob = None;
+
+        for elem in ast {
+            let crate::ast::RootElem::Statement(expr) = elem else {
+                continue;
+            };
+
+            if glob.is_some() {
+                // Already found a glob expression
+                return Err(TypeError::MultipleGlobExpr);
+            }
+
+            glob = Some(tr.to_expr(expr)?);
+        }
+
         Ok(Unit {
-            constpool: inst.constpool,
-            expr: e,
-            funpool: inst.funpool,
+            constpool: tr.constpool,
+            expr: glob.ok_or(TypeError::NoGlobExpr)?,
+            funpool: tr.funpool,
         })
+    }
+
+    fn create_fun_stubs(&mut self, ast: &[crate::ast::RootElem]) -> TResult<()> {
+        for elem in ast {
+            let crate::ast::RootElem::FunDecl(fun) = elem else {
+                continue;
+            };
+            // The args
+            let args = fun
+                .args
+                .iter()
+                .map(|e| {
+                    let aname = e.name.clone();
+                    let tyname = e.ty.clone();
+
+                    let argty = &tyname.ok_or(TypeError::FnArgNoType {
+                        name: aname.clone(),
+                    })?;
+                    Ok(FunArg {
+                        name: aname.clone(),
+                        ty: self
+                            .str_to_ty(&argty)
+                            .ok_or(TypeError::UnknownTy { name: aname.into() })?,
+                    })
+                })
+                .collect::<Result<Vec<_>, TypeError>>()?;
+
+            let ret = fun.ret.clone().ok_or(TypeError::FnNoRetType {
+                name: fun.name.clone(),
+            })?;
+            let ret = self
+                .str_to_ty(&ret)
+                .ok_or(TypeError::UnknownTy { name: ret.into() })?;
+
+            self.add_stub_fun(&fun.name, ret, &args, false);
+        }
+
+        Ok(())
     }
 
     fn to_op(&mut self, op: &crate::ast::BinOp) -> Op {
@@ -233,6 +417,27 @@ impl TypeChecker {
             crate::ast::BinOp::Div => Op::Div,
             crate::ast::BinOp::Pwr => Op::Pow,
         }
+    }
+
+    fn process_fn(&mut self, fun: &crate::ast::FunDecl) -> TResult<()> {
+        // Check is not already defined (no stub)
+        let FunId(fid) = self.reverse_fun[&fun.name]; // Its ok to panic, because we actually EXPECT
+                                                      // fun.name to be a stub
+
+        if !self.is_stub(&FunId(fid)) {
+            return Err(TypeError::DupdFun {
+                name: fun.name.clone(),
+            });
+        }
+
+        // Transform the function body
+        let body = self.to_expr(&fun.body)?;
+
+        // Add the function to the pool
+        self.update_fn_body(&FunId(fid), FunBody::Expr(body));
+        self.unstub(&FunId(fid));
+
+        Ok(())
     }
 
     fn to_expr(&mut self, expr: &crate::ast::Expr) -> TResult<Expr> {
@@ -298,12 +503,13 @@ impl TypeChecker {
                     // Check if args match
                     let expr = self.to_expr(arg)?;
 
-                    let req = self.funpool[funid].args[i];
-                    if expr.ty() != req {
+                    let req = self.funpool[funid].args[i].clone();
+                    if expr.ty() != req.ty {
                         // Argument type mismatch
                         return Err(TypeError::FnArgMismatch {
                             idx: i + 1,
-                            exp: req.clone(),
+                            name: req.name,
+                            exp: req.ty,
                             found: expr.ty(),
                         });
                     }
@@ -326,7 +532,7 @@ impl TypeChecker {
                     .collect::<Result<Vec<_>, TypeError>>()?;
 
                 Expr::Block {
-                    ty: instrs.last().map(|e: &Expr| e.ty()).unwrap_or(Ty::Void),
+                    ty: instrs.last().map(|e: &Expr| e.ty()).unwrap_or(Ty::Obj),
                     insts: instrs,
                 }
             }

@@ -69,6 +69,9 @@ pub enum Tk {
     #[token(",")]
     Comma,
 
+    #[token(":")]
+    Colon,
+
     #[token(";")]
     Semicolon,
 

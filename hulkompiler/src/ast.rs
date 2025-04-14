@@ -46,6 +46,29 @@ pub enum Expr {
     BlockExpr(BlockExpr),
 }
 
+/// A function argument
+#[derive(Debug)]
+pub struct FunArg {
+    pub name: String,
+    pub ty: Option<String>,
+}
+
+/// A function declaration
+#[derive(Debug)]
+pub struct FunDecl {
+    pub name: String,
+    pub args: Vec<FunArg>,
+    pub ret: Option<String>,
+    pub body: Expr,
+}
+
+/// A root element
+#[derive(Debug)]
+pub enum RootElem {
+    FunDecl(FunDecl),
+    Statement(Expr),
+}
+
 /// Errors that may happen while parsing
 #[derive(Debug, Error)]
 pub enum ParseError {
@@ -83,7 +106,7 @@ type PResult<T> = Result<T, ParseError>;
 
 impl<'a> Parser<'a> {
     /// Parse the given string of data
-    pub fn parse(data: &str) -> Result<Expr, ParseError> {
+    pub fn parse(data: &str) -> Result<Vec<RootElem>, ParseError> {
         let lex = crate::lex::tokenize_data(data)?;
         let mut parser = Parser {
             ptr: 0,
@@ -92,7 +115,12 @@ impl<'a> Parser<'a> {
             slices: lex.iter().map(|(_, _, sli)| *sli).collect(),
         };
 
-        Ok(parser.reduce_statement()?)
+        let mut res = Vec::new();
+        while let Some(roote) = parser.reduce_root_elem()? {
+            res.push(roote);
+        }
+
+        Ok(res)
     }
 
     pub fn save(&self) -> usize {
@@ -125,6 +153,128 @@ impl<'a> Parser<'a> {
             ParseError::EarlyEof {
                 expected: exp.into(),
             }
+        }
+    }
+
+    /// Read a function declaration or an expression
+    /// <root-elem> ::= <fun-decl> | <statement> | <EOF>
+    fn reduce_root_elem(&mut self) -> PResult<Option<RootElem>> {
+        Ok(match self.remaining() {
+            [] => return Ok(None),
+            [Tk::Function, ..] => Some(RootElem::FunDecl(self.reduce_fun_decl()?)),
+            _ => Some(RootElem::Statement(self.reduce_statement()?)),
+        })
+    }
+
+    /// Reduce a function declaration
+    /// <fun-decl> ::= "function" ID '(' <args>... ')' <fun-body>
+    fn reduce_fun_decl(&mut self) -> PResult<FunDecl> {
+        // Expect function kw
+        match self.remaining() {
+            [Tk::Function, ..] => {
+                self.take();
+            }
+            _ => return Err(self.unexpected(&[Tk::Function])),
+        }
+
+        // Expect an identifier
+        let name = match self.remaining() {
+            [Tk::Id, ..] => self.take().into(),
+            _ => return Err(self.unexpected(&[Tk::Id])),
+        };
+
+        // Expect an par open: (
+        match self.remaining() {
+            [Tk::LPar, ..] => {
+                self.take();
+            }
+            _ => return Err(self.unexpected(&[Tk::LPar])),
+        }
+
+        // Expect arguments
+        let args = match self.remaining() {
+            [Tk::RPar, ..] => vec![],
+            _ => self.reduce_fun_args()?,
+        };
+
+        // Expect RPar
+        match self.remaining() {
+            [Tk::RPar, ..] => {
+                self.take();
+            }
+            _ => return Err(self.unexpected(&[Tk::RPar])),
+        }
+
+        // Maybe a type
+        let ret = match self.remaining() {
+            [Tk::Colon, ..] => {
+                self.take();
+
+                match self.remaining() {
+                    [Tk::Id, ..] => Some(self.take().into()),
+                    _ => return Err(self.unexpected(&[Tk::Id])),
+                }
+            }
+            _ => None,
+        };
+
+        // Expect either a fat arrow of a code block
+        let body = match self.remaining() {
+            [Tk::RArrow, ..] => {
+                self.take();
+                self.reduce_statement()?
+            }
+            [Tk::LBrac, ..] => self.reduce_statement()?,
+            _ => return Err(self.unexpected(&[Tk::RArrow, Tk::LBrac])),
+        };
+
+        // Done :)
+        Ok(FunDecl {
+            name,
+            args,
+            ret,
+            body,
+        })
+    }
+
+    /// Reduce function args (more than one)
+    /// <fun-args> ::= ID [ ':' ID ] [ ',' <fun-args> ]
+    fn reduce_fun_args(&mut self) -> PResult<Vec<FunArg>> {
+        let mut res = Vec::new();
+        self.reduce_fun_args_inner(&mut res)?;
+        Ok(res)
+    }
+
+    fn reduce_fun_args_inner(&mut self, out: &mut Vec<FunArg>) -> PResult<()> {
+        let name = match self.remaining() {
+            [Tk::Id, ..] => self.take().into(),
+            _ => return Err(self.unexpected(&[Tk::Id, Tk::RPar])),
+        };
+
+        // Maybe the type
+        let ty = match self.remaining() {
+            [Tk::Colon, ..] => {
+                self.take();
+
+                match self.remaining() {
+                    [Tk::Id, ..] => Some(self.take().into()),
+                    _ => return Err(self.unexpected(&[Tk::Id])),
+                }
+            }
+            _ => None,
+        };
+
+        let arg = FunArg { name, ty };
+        out.push(arg);
+
+        // Check if there is more
+        match self.remaining() {
+            [Tk::Comma, ..] => {
+                self.take();
+
+                self.reduce_fun_args_inner(out)
+            }
+            _ => Ok(()),
         }
     }
 
