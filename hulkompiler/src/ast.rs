@@ -95,11 +95,11 @@ impl<'a> Parser<'a> {
         Ok(parser.reduce_expr()?)
     }
 
-    fn save(&self) -> usize {
+    pub fn save(&self) -> usize {
         self.ptr
     }
 
-    fn restore(&mut self, ptr: usize) {
+    pub fn restore(&mut self, ptr: usize) {
         self.ptr = ptr;
     }
 
@@ -111,10 +111,6 @@ impl<'a> Parser<'a> {
 
     fn remaining(&self) -> &[Tk] {
         &self.data[self.ptr..]
-    }
-
-    fn slice_values(&self) -> &[&'a str] {
-        &self.slices[self.ptr..]
     }
 
     fn unexpected(&mut self, exp: &'static [Tk]) -> ParseError {
@@ -130,16 +126,6 @@ impl<'a> Parser<'a> {
                 expected: exp.into(),
             }
         }
-    }
-
-    fn map_operator(&self, op: Tk) -> Option<BinOp> {
-        Some(match op {
-            Tk::Add => BinOp::Add,
-            Tk::Minus => BinOp::Sub,
-            Tk::Star => BinOp::Mult,
-            Tk::Slash => BinOp::Div,
-            _ => return None,
-        })
     }
 
     /// A statement (?) is an expresion ended with a semicolon ;
@@ -209,7 +195,7 @@ impl<'a> Parser<'a> {
                 Expr::BinOpExpr(BinOpExpr {
                     op: BinOp::Add,
                     left: lhs.into(),
-                    right: self.reduce_expr_mult()?.into(),
+                    right: self.reduce_expr_sum()?.into(),
                 })
             }
             [Tk::Minus, ..] => {
@@ -217,7 +203,7 @@ impl<'a> Parser<'a> {
                 Expr::BinOpExpr(BinOpExpr {
                     op: BinOp::Sub,
                     left: lhs.into(),
-                    right: self.reduce_expr_mult()?.into(),
+                    right: self.reduce_expr_sum()?.into(),
                 })
             }
             _ => lhs,

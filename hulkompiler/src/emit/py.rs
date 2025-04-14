@@ -2,6 +2,7 @@
 
 use crate::hir;
 
+
 pub struct Emitter<'a> {
     unit: &'a hir::Unit,
 }
@@ -27,7 +28,7 @@ impl<'a> Emitter<'a> {
     /// Convert an expresion to python, without indentation
     fn expr_to_py(&mut self, expr: &hir::Expr) -> String {
         match expr {
-            hir::Expr::Const { cons, ty } => {
+            hir::Expr::Const { cons, ty: _ } => {
                 // Just get the value, if it is a string
                 let val = self
                     .unit
@@ -57,7 +58,7 @@ impl<'a> Emitter<'a> {
                     self.expr_to_py(&right)
                 )
             }
-            hir::Expr::Call { fun, ty, args } => {
+            hir::Expr::Call { fun, ty: _, args } => {
                 let fun = self
                     .unit
                     .lookup_fun(fun)
@@ -67,7 +68,7 @@ impl<'a> Emitter<'a> {
                 let args: Vec<_> = args.iter().map(|e| self.expr_to_py(e)).collect();
                 format!("hk_{}({})", fun.name, args.join(","))
             }
-            _ => panic!("Unsupported expr type: {expr:?}, dont know how to proceed"),
+            //_ => panic!("Unsupported expr type: {expr:?}, dont know how to proceed"),
         }
     }
 }

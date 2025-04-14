@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use std::{
     env::{args, Args},
     ffi::OsStr,
