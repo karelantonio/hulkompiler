@@ -92,7 +92,7 @@ impl<'a> Parser<'a> {
             slices: lex.iter().map(|(_, _, sli)| *sli).collect(),
         };
 
-        Ok(parser.reduce_expr()?)
+        Ok(parser.reduce_statement()?)
     }
 
     pub fn save(&self) -> usize {
