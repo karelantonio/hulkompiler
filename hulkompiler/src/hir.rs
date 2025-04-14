@@ -24,7 +24,7 @@ pub struct Const {
 }
 
 /// A type (may be inside a type pool)
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ty {
     Void, /* Nothing */
     Num,
@@ -140,6 +140,16 @@ pub enum TypeError {
 
     #[error("Both expressions must be numbers in order to apply an arithmetic operator")]
     ExprMustBeNumbers,
+
+    #[error("Required {req} args for function {fname} but {found} were provided")]
+    InvalidNumberOfArgs {
+        req: usize,
+        fname: String,
+        found: usize,
+    },
+
+    #[error("{idx}th argument type mismatch, expected: {exp:?}, found: {found:?}")]
+    FnArgMismatch { idx: usize, exp: Ty, found: Ty },
 }
 
 type TResult<T> = Result<T, TypeError>;
@@ -255,23 +265,52 @@ impl TypeChecker {
 
             crate::ast::Expr::FunCallExpr(fun) => {
                 // Check if the function exists
-                let FunId(funid) =
-                    self.reverse_fun
-                        .get(&fun.name)
-                        .ok_or(TypeError::UnknownFun {
-                            name: fun.name.clone(),
-                        })?;
+                let FunId(funid) = self
+                    .reverse_fun
+                    .get(&fun.name)
+                    .ok_or(TypeError::UnknownFun {
+                        name: fun.name.clone(),
+                    })?
+                    .clone();
 
-                let funref = &self.funpool[*funid];
+                let ty = {
+                    let funref = &self.funpool[funid];
+
+                    if fun.args.len() != funref.args.len() {
+                        return Err(TypeError::InvalidNumberOfArgs {
+                            req: funref.args.len(),
+                            fname: funref.name.clone(),
+                            found: fun.args.len(),
+                        });
+                    }
+
+                    funref.ty.clone()
+                };
+
+                // The arguments with its type checked
+                let mut args = Vec::new();
+
+                for (i, arg) in fun.args.iter().enumerate() {
+                    // Check if args match
+                    let expr = self.to_expr(arg)?;
+
+                    let req = self.funpool[funid].args[i];
+                    if expr.ty() != req {
+                        // Argument type mismatch
+                        return Err(TypeError::FnArgMismatch {
+                            idx: i + 1,
+                            exp: req.clone(),
+                            found: expr.ty(),
+                        });
+                    }
+
+                    args.push(expr);
+                }
 
                 Expr::Call {
-                    fun: FunId(*funid),
-                    ty: funref.ty,
-                    args: fun
-                        .args
-                        .iter()
-                        .map(|e| self.to_expr(e))
-                        .collect::<Result<Vec<_>, TypeError>>()?,
+                    fun: FunId(funid),
+                    ty,
+                    args,
                 }
             }
 
