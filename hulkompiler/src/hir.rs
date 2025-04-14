@@ -70,16 +70,20 @@ pub enum Expr {
         ty: Ty,
         args: Vec<Expr>,
     },
+    Block {
+        ty: Ty,
+        insts: Vec<Expr>,
+    },
 }
 
 impl Expr {
     pub fn ty(&self) -> Ty {
-        match self {
+        *match self {
             Self::Const { ty, .. } => ty,
             Self::BinOp { ty, .. } => ty,
             Self::Call { ty, .. } => ty,
+            Self::Block { ty, insts: _ } => ty,
         }
-        .clone()
     }
 
     pub fn is_const(&self) -> bool {
@@ -311,6 +315,19 @@ impl TypeChecker {
                     fun: FunId(funid),
                     ty,
                     args,
+                }
+            }
+
+            crate::ast::Expr::BlockExpr(crate::ast::BlockExpr { exprs }) => {
+                // Map each of these
+                let instrs = exprs
+                    .iter()
+                    .map(|e| self.to_expr(e))
+                    .collect::<Result<Vec<_>, TypeError>>()?;
+
+                Expr::Block {
+                    ty: instrs.last().map(|e: &Expr| e.ty()).unwrap_or(Ty::Void),
+                    insts: instrs,
                 }
             }
 
