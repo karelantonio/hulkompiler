@@ -1,6 +1,7 @@
 //! The high-level intermediate representation of the language
 //! Makes easy the type-checking phase :)
 
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 /// A constant id (for references)
@@ -25,6 +26,7 @@ pub struct Const {
 /// A type (may be inside a type pool)
 #[derive(Clone, Copy, Debug)]
 pub enum Ty {
+    Void, /* Nothing */
     Num,
     Str,
     Bool,
@@ -89,16 +91,27 @@ impl Expr {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct FunId(usize);
 
+/// A function body
+#[derive(Debug)]
+pub enum FunBody {
+    Expr(Expr),
+    Std,
+    Native, // To make things more interesting :)
+}
+
 /// A function
+#[derive(Debug)]
 pub struct Fun {
     pub id: FunId,
     pub name: String,
     pub ty: Ty,
-    pub body: Expr,
+    pub args: Vec<Ty>,
+    pub body: FunBody,
 }
 
 #[derive(Debug)]
 pub struct Unit {
+    pub funpool: Vec<Fun>,
     pub constpool: Vec<Const>,
     pub expr: Expr,
 }
@@ -106,6 +119,10 @@ pub struct Unit {
 impl Unit {
     pub fn lookup_const(&self, ConstId(cid): &ConstId) -> Option<&Const> {
         self.constpool.get(*cid)
+    }
+
+    pub fn lookup_fun(&self, FunId(fid): &FunId) -> Option<&Fun> {
+        self.funpool.get(*fid)
     }
 }
 
@@ -132,6 +149,8 @@ type TResult<T> = Result<T, TypeError>;
 #[derive(Default)]
 pub struct TypeChecker {
     constpool: Vec<Const>,
+    funpool: Vec<Fun>,
+    reverse_fun: BTreeMap<String, FunId>,
 }
 
 impl TypeChecker {
@@ -156,14 +175,39 @@ impl TypeChecker {
         ConstId(id)
     }
 
+    fn add_std_fun(&mut self, name: &str, ret: Ty, args: &[Ty]) {
+        let newid = self.funpool.len();
+        let fun = Fun {
+            id: FunId(newid),
+            name: name.into(),
+            ty: ret,
+            body: FunBody::Std,
+            args: args.into(),
+        };
+        self.funpool.push(fun);
+        self.reverse_fun.insert(name.into(), FunId(newid));
+    }
+
     /// Transform the given expresion to the given unit
     pub fn transform(stm: &crate::ast::Expr) -> TResult<Unit> {
         // Transform this expr to our expr
         let mut inst = Self::default();
+
+        // Add the Standard library functions
+        inst.add_std_fun("print", Ty::Void, &[Ty::Str]);
+        // -- math functions --
+        inst.add_std_fun("sqrt", Ty::Num, &[Ty::Num]);
+        inst.add_std_fun("sin", Ty::Num, &[Ty::Num]);
+        inst.add_std_fun("cos", Ty::Num, &[Ty::Num]);
+        inst.add_std_fun("exp", Ty::Num, &[Ty::Num]);
+        inst.add_std_fun("log", Ty::Num, &[Ty::Num, Ty::Num]);
+        inst.add_std_fun("rand", Ty::Num, &[]);
+
         let e = inst.to_expr(stm)?;
         Ok(Unit {
             constpool: inst.constpool,
             expr: e,
+            funpool: inst.funpool,
         })
     }
 
@@ -206,6 +250,28 @@ impl TypeChecker {
                     op,
                     left: left.into(),
                     right: right.into(),
+                }
+            }
+
+            crate::ast::Expr::FunCallExpr(fun) => {
+                // Check if the function exists
+                let FunId(funid) =
+                    self.reverse_fun
+                        .get(&fun.name)
+                        .ok_or(TypeError::UnknownFun {
+                            name: fun.name.clone(),
+                        })?;
+
+                let funref = &self.funpool[*funid];
+
+                Expr::Call {
+                    fun: FunId(*funid),
+                    ty: funref.ty,
+                    args: fun
+                        .args
+                        .iter()
+                        .map(|e| self.to_expr(e))
+                        .collect::<Result<Vec<_>, TypeError>>()?,
                 }
             }
 

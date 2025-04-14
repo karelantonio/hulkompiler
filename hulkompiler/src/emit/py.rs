@@ -37,7 +37,7 @@ impl<'a> Emitter<'a> {
             }
             hir::Expr::BinOp {
                 op,
-                ty,
+                ty: _,
                 left,
                 right,
             } => {
@@ -57,7 +57,17 @@ impl<'a> Emitter<'a> {
                     self.expr_to_py(&right)
                 )
             }
-            _ => panic!("Unsupported expr type: {:?}, dont know how to proceed", expr)
+            hir::Expr::Call { fun, ty, args } => {
+                let fun = self
+                    .unit
+                    .lookup_fun(fun)
+                    .expect("Expected an existing function"); // Its OK, if the function did not
+                                                              // exists then why we have a type
+                                                              // checker?
+                let args: Vec<_> = args.iter().map(|e| self.expr_to_py(e)).collect();
+                format!("hk_{}({})", fun.name, args.join(","))
+            }
+            _ => panic!("Unsupported expr type: {expr:?}, dont know how to proceed"),
         }
     }
 }
