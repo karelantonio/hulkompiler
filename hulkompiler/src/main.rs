@@ -5,78 +5,216 @@ use std::{
     path::Path,
 };
 
-/// Show the help menu
-fn cmd_help(binname: &str) {
-    let ver = env!("CARGO_PKG_VERSION");
-    println!(
-        r#"
-Usage: {binname} -h | COMMAND [OPTIONS]
-
-Options:
-
-  -h, --help:
-    Show this help message
-
-Commands:
-  emit-py:
-    Emit the HIR (high level intermediate representation) as Python (3) code
-  dump-lex:
-    (DEBUG) Lex the file and dump (to stdout) the tokens
-  dump-ast:
-    (DEBUG)Parse the file and dump (to stdout) the AST
-
-HULKompiler {ver}
-"#
-    );
+/// An argument
+pub struct Arg {
+    id: usize,
+    short: Option<&'static str>,
+    long: &'static str,
+    help: Option<&'static str>,
 }
 
-/// Print the help message of the dump-lex command
-fn cmd_dumplex_help(binname: &str) {
-    let ver = env!("CARGO_PKG_VERSION");
-    println!(
-        r#"
-Usage: {binname} dump-lex [OPTIONS] FILE
-
-Dump the lexed data (to debug purposes)
-
-Options:
-
-  -h, --help:
-    Show this help message
-  -w, --wide
-    Print the data prittier
-
-HULKompiler {ver}
-"#
-    );
+/// A value
+pub struct Value {
+    id: usize,
+    name: &'static str,
+    help: Option<&'static str>,
 }
 
-/// Dump the lex result
-fn cmd_dumplex(binname: &str, mut args: Args) -> Result<()> {
-    let mut file = None;
-    let mut wide = false;
+/// Could not find argument/option/value
+#[derive(Debug, thiserror::Error)]
+pub enum ArgError {
+    #[error("No args provided")]
+    NoArgs,
+    #[error("Unexpected option: {0}, try --help")]
+    UnexpectedOption(String),
+    #[error("Unexpected argument: {0}, try --help")]
+    UnexpectedArg(String),
+    #[error("Unexpected value: {0}, try --help")]
+    UnexpectedValue(String),
+    #[error("Missing value: {0}")]
+    MissingValue(String),
+}
 
-    // Parse the remaining args
-    while let Some(arg) = args.next() {
-        if arg == "-h" || arg == "--help" {
-            cmd_dumplex_help(binname);
-            return Ok(());
-        } else if arg == "-w" || arg == "--wide" {
-            wide = true;
-        } else if arg.starts_with("--") {
-            bail!("Unknown arg: {arg}");
-        } else if arg.starts_with("-") {
-            bail!("Unknown option: {arg}");
-        } else if file.is_none() {
-            file = Some(arg);
-        } else {
-            bail!("Unexpected value: {arg}");
+/// Simple argument parser
+pub struct ArgParser {
+    binname: String,
+    cmd_prefix: String,
+    desc: Option<String>,
+    tail: Option<String>,
+    args: Vec<Arg>,
+    values: Vec<Value>,
+    ptr: usize,
+    procargs: Option<Args>,
+    found_values: usize,
+}
+
+impl ArgParser {
+    fn done(self) -> Result<Args, ArgError> {
+        self.procargs.ok_or(ArgError::NoArgs)
+    }
+
+    fn new(name: &str, prefix: Option<&str>, desc: Option<&str>, tail: Option<&str>) -> Self {
+        Self {
+            binname: name.into(),
+            cmd_prefix: match prefix {
+                Some(v) => format!(" {v}"),
+                _ => "".into(),
+            },
+            desc: desc.map(|e| e.to_string()),
+            tail: tail.map(|e| e.to_string()),
+            args: vec![Arg {
+                id: 0,
+                short: Some("-h"),
+                long: "--help",
+                help: Some("Show this help message"),
+            }],
+            values: Vec::new(),
+            ptr: 0,
+            procargs: None,
+            found_values: 0,
         }
     }
 
-    let Some(file) = file else {
-        bail!("No file specified");
-    };
+    fn feed(&mut self, args: Args) {
+        self.procargs = Some(args);
+    }
+
+    fn push_arg(
+        &mut self,
+        short: Option<&'static str>,
+        long: &'static str,
+        help: Option<&'static str>,
+    ) -> usize {
+        let id = self.args.len() + self.values.len();
+        self.args.push(Arg {
+            id,
+            short,
+            long,
+            help,
+        });
+        id
+    }
+
+    fn push_value(&mut self, name: &'static str, help: Option<&'static str>) -> usize {
+        let id = self.args.len() + self.values.len();
+        self.values.push(Value { id, name, help });
+        id
+    }
+
+    /// Show the help message and exit
+    fn show_help(&self) {
+        // Print the usage
+        // The values
+        let vals = self.values.iter().map(|e| e.name).collect::<Vec<_>>();
+        println!(
+            " Usage: {}{} [OPTIONS] {}",
+            self.binname,
+            self.cmd_prefix,
+            &vals.join(" ")
+        );
+        println!();
+
+        if let Some(desc) = &self.desc {
+            println!("{desc}");
+            println!();
+        }
+
+        println!(" Options:");
+        for arg in self.args.iter() {
+            if let Some(shrt) = arg.short {
+                println!("  {shrt}, {}", arg.long);
+            } else {
+                println!("  {}", arg.long);
+            }
+
+            if let Some(help) = arg.help {
+                println!("    {help}");
+            } else {
+                println!();
+            }
+        }
+
+        if self.values.len() > 0 {
+            println!(" Values:");
+            for val in self.values.iter() {
+                println!("  {}", val.name);
+
+                if let Some(help) = val.help {
+                    println!("    {help}");
+                } else {
+                    println!();
+                }
+            }
+        }
+
+        std::process::exit(0);
+    }
+
+    fn next(&mut self) -> Result<Option<(usize, String)>, ArgError> {
+        let Some(ref mut args) = self.procargs else {
+            return Err(ArgError::NoArgs);
+        };
+
+        let Some(arg) = args.next() else {
+            // No more args
+            return if self.found_values < self.values.len() {
+                Err(ArgError::MissingValue(self.values[0].name.into()))
+            } else {
+                Ok(None)
+            };
+        };
+
+        for uarg in self.args.iter() {
+            if Some(arg.as_str()) == uarg.short || arg == uarg.long {
+                if uarg.id == 0 {
+                    // Is help
+                    self.show_help();
+                }
+
+                // Matched !
+                return Ok(Some((uarg.id, arg)));
+            }
+        }
+
+        // Check if is an arg
+        if arg.starts_with("--") {
+            return Err(ArgError::UnexpectedArg(arg));
+        } else if arg.starts_with("-") {
+            return Err(ArgError::UnexpectedOption(arg));
+        }
+
+        // Is a value
+        if self.found_values >= self.values.len() {
+            return Err(ArgError::UnexpectedValue(arg));
+        }
+
+        // Is a valid value
+        let id = self.values[self.found_values].id;
+        self.found_values += 1;
+
+        Ok(Some((id, arg)))
+    }
+}
+
+/// Dump the lex result
+fn cmd_dumplex(binname: &str, args: Args) -> Result<()> {
+    let mut file = None;
+    let mut wide = false;
+
+    let mut parser = ArgParser::new(binname, Some("dump-lex"), None, None);
+    parser.feed(args);
+    let o_wide = parser.push_arg(Some("-w"), "--wide", Some("Print the result wider"));
+    let o_file = parser.push_value("file", Some("The source file"));
+
+    while let Some((arg, val)) = parser.next()? {
+        if arg == o_wide {
+            wide = true;
+        } else if arg == o_file {
+            file = Some(val);
+        }
+    }
+
+    let file = file.expect("Should not be None, see ArgParser");
 
     // Read the contents
     let data = std::fs::read_to_string(file)?;
@@ -96,53 +234,25 @@ fn cmd_dumplex(binname: &str, mut args: Args) -> Result<()> {
     Ok(())
 }
 
-/// Help about dump-ast
-fn cmd_dumpast_help(binname: &str) {
-    let ver = env!("CARGO_PKG_VERSION");
-    println!(
-        r#"
-Usage: {binname} dump-ast [OPTIONS] FILE
-
-Dump the parsed data (to debug purposes)
-
-Options:
-
-  -h, --help:
-    Show this help message
-  -w, --wide
-    Print the data prettier
-
-HULKompiler {ver}
-"#
-    );
-}
-
 /// Dump to stdout the abstract syntax tree
-fn cmd_dumpast(binname: &str, mut args: Args) -> Result<()> {
+fn cmd_dumpast(binname: &str, args: Args) -> Result<()> {
     let mut file = None;
     let mut wide = false;
 
-    while let Some(arg) = args.next() {
-        if arg == "-h" || arg == "--help" {
-            // Print help and exit
-            cmd_dumpast_help(binname);
-            return Ok(());
-        } else if arg == "-w" || arg == "--wide" {
+    let mut parser = ArgParser::new(binname, Some("dump-ast"), None, None);
+    parser.feed(args);
+    let o_wide = parser.push_arg(Some("-w"), "--wide", Some("Print the result wider"));
+    let o_file = parser.push_value("file", Some("The source file"));
+
+    while let Some((arg, val)) = parser.next()? {
+        if arg == o_wide {
             wide = true;
-        } else if arg.starts_with("--") {
-            bail!("Unknown arg: {arg}");
-        } else if arg.starts_with("-") {
-            bail!("Unknown option: {arg}");
-        } else if file.is_none() {
-            file = Some(arg);
-        } else {
-            bail!("Unexpected value: {arg}");
+        } else if arg == o_file {
+            file = Some(val);
         }
     }
 
-    let Some(file) = file else {
-        bail!("No file specified");
-    };
+    let file = file.expect("Should not be None, see ArgParser");
 
     // Read the file
     let content = std::fs::read_to_string(file)?;
@@ -160,46 +270,18 @@ fn cmd_dumpast(binname: &str, mut args: Args) -> Result<()> {
     Ok(())
 }
 
-/// Help about the emit-c command
-fn cmd_emitpy_help(binname: &str) {
-    let ver = env!("CARGO_PKG_VERSION");
-    println!(
-        r#"
-Usage: {binname} emit-py [OPTIONS] FILE
-
-Write the HIR (high level intermediate representation) as Python (3) code
-
-Options:
-
-  -h, --help:
-    Show this help message
-
-HULKompiler {ver}
-"#
-    );
-}
-
-fn cmd_emitpy(binname: &str, mut args: Args) -> Result<()> {
+fn cmd_emitpy(binname: &str, args: Args) -> Result<()> {
     let mut file = None;
 
-    while let Some(arg) = args.next() {
-        if arg == "-h" || arg == "--help" {
-            cmd_emitpy_help(binname);
-            return Ok(());
-        }else if arg.starts_with("--") {
-            bail!("Unknown arg: {arg}");
-        }else if arg.starts_with("-") {
-            bail!("Unknown option: {arg}");
-        }else if file.is_none() {
-            file = Some(arg);
-        }else {
-            bail!("Unexpected value: {arg}");
-        }
+    let mut parser = ArgParser::new(binname, Some("emit-py"), None, None);
+    let p_file = parser.push_value("file", Some("The source file"));
+    parser.feed(args);
+
+    while let Some((_arg, val)) = parser.next()? {
+        file = Some(val);
     }
 
-    let Some(file) = file else {
-        bail!("No file specified");
-    };
+    let file = file.expect("Should not be None, see ArgParser"); // Its ok
 
     // Read the contents
     let content = std::fs::read_to_string(&file)?;
@@ -208,10 +290,10 @@ fn cmd_emitpy(binname: &str, mut args: Args) -> Result<()> {
     let ast = hulkompiler::ast::Parser::parse(&content)?;
 
     // Transform
-    let tr = hulkompiler::hir::TypeChecker::transform(&ast)?;
+    //let tr = hulkompiler::hir::TypeChecker::transform(&ast)?;
 
     // Emit C
-    println!("{}", hulkompiler::emit::py::Emitter::emit(&tr));
+    //println!("{}", hulkompiler::emit::py::Emitter::emit(&tr));
 
     Ok(())
 }
@@ -224,31 +306,32 @@ fn main() -> Result<()> {
     let Some(bin) = args.next() else {
         bail!("Bad args (expected binary name, found nothing)");
     };
+
     let binname = Path::new(&bin)
         .file_name()
         .map(OsStr::to_string_lossy)
         .unwrap_or("hulkompiler".into());
 
+    let mut parser = ArgParser::new(&binname, None, None, None);
+    let _opt_cmd = parser.push_value(
+        "command",
+        Some("Must be one of: emit-py, dump-ast, or dump-lex"),
+    );
+    parser.feed(args);
+
     // Parse the args
-    while let Some(arg) = args.next() {
-        if arg == "-h" || arg == "--help" {
-            // Show the help menu
-            cmd_help(&binname);
-            return Ok(());
-        } else if arg == "dump-lex" {
-            return cmd_dumplex(&binname, args);
-        } else if arg == "dump-ast" {
-            return cmd_dumpast(&binname, args);
-        } else if arg == "emit-py" {
-            return cmd_emitpy(&binname, args);
-        } else if arg.starts_with("--") {
-            bail!("Unknown arg {arg}, try --help");
-        } else if arg.starts_with("-") {
-            bail!("Unknown option {arg}, try --help");
+    while let Some((_arg, val)) = parser.next()? {
+        if val == "dump-lex" {
+            return cmd_dumplex(&binname, parser.done()?);
+        } else if val == "dump-ast" {
+            return cmd_dumpast(&binname, parser.done()?);
+        } else if val == "emit-py" {
+            return cmd_emitpy(&binname, parser.done()?);
         } else {
-            bail!("Unexpected command {arg}, try --help");
+            bail!("Unknown command: {val}");
         }
     }
 
-    bail!("No command specified, try --help")
+    // Unreachable
+    bail!("No command specified")
 }
