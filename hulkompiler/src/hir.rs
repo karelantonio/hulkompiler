@@ -439,12 +439,6 @@ impl TypeChecker {
             });
         }
 
-        match op {
-            // We can concatenate anything
-            Op::Cat => (),
-            _ => panic!("Dont know how to handle operator: {op:?}"),
-        }
-
         Ok(())
     }
 
