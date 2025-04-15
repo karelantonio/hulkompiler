@@ -20,7 +20,7 @@ pub struct PyFile {
 
 const STD: &[&str] = &[
     "# Standard library of HULK",
-    "from math import sin, cos, sqrt, exp, log",
+    "from math import sin, cos, sqrt, exp, log, pi",
     "from random import uniform",
     "def hk_print(arg:object)->object: print(arg)",
     "def hk_sqrt(n:float)->float: return sqrt(n)",
@@ -29,6 +29,7 @@ const STD: &[&str] = &[
     "def hk_exp(n:float)->float: return exp(n)",
     "def hk_log(b:float,a:float)->float: return log(a, base=b)",
     "def hk_rand()->float: return uniform(0, 1)",
+    "hkv_PI = pi",
     "# End of HULK standard library",
 ];
 
@@ -254,6 +255,10 @@ impl<'a> Emitter<'a> {
             hir::Expr::ImplicitCast { ty: _, expr } => {
                 // In python is not required to do any black magic, just ol' polimorphism
                 self.expr_to_py(outp, expr)
+            }
+            hir::Expr::VarRead { ty: _, var } => {
+                let var = self.unit.lookup_var(var).expect("Expect that variable to exist");
+                Instr::Instr(format!("hkv_{}", var.name))
             }
         }
     }

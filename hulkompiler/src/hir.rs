@@ -78,6 +78,10 @@ pub enum Expr {
         ty: Ty,
         expr: Box<Expr>,
     },
+    VarRead {
+        ty: Ty,
+        var: VarId,
+    },
 }
 
 impl Expr {
@@ -88,6 +92,7 @@ impl Expr {
             Self::Call { ty, .. } => ty,
             Self::Block { ty, .. } => ty,
             Self::ImplicitCast { ty, .. } => ty,
+            Self::VarRead { ty, .. } => ty,
         }
     }
 
@@ -99,6 +104,81 @@ impl Expr {
 /// A function ID (for references)
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct FunId(usize);
+
+/// A variable ID
+#[derive(Debug, Clone, Copy)]
+pub struct VarId(usize);
+
+/// A variable
+#[derive(Debug, Clone)]
+pub struct Var {
+    pub id: VarId,
+    pub name: String,
+    pub ty: Ty,
+}
+
+/// A scope delta, like add a variable
+#[derive(Debug, Clone)]
+pub enum ScopeDelta {
+    New { id: VarId },
+    Shadowed { old: VarId, new: VarId },
+}
+
+/// A scope which stores variables and can mutate
+#[derive(Debug, Default, Clone)]
+pub struct Scope {
+    pub varcnt: usize,
+    pub vars: Vec<Var>,
+    pub reverse_vars: BTreeMap<String, VarId>,
+    pub deltas: Vec<ScopeDelta>,
+}
+
+impl Scope {
+    pub fn push_var(&mut self, name: &str, ty: Ty) -> VarId {
+        let id = self.vars.len();
+
+        self.vars.push(Var {
+            id: VarId(id),
+            name: name.into(),
+            ty,
+        });
+
+        if let Some(oldid) = self.reverse_vars.insert(name.into(), VarId(id)) {
+            self.deltas.push(ScopeDelta::Shadowed {
+                old: oldid,
+                new: VarId(id),
+            });
+        } else {
+            self.deltas.push(ScopeDelta::New { id: VarId(id) })
+        }
+
+        VarId(id)
+    }
+
+    pub fn undo(&mut self) -> Option<VarId> {
+        let Some(delta) = self.deltas.pop() else {
+            return None;
+        };
+
+        Some(match delta {
+            ScopeDelta::New { id: VarId(id) } => {
+                let name = &self.vars[id].name;
+
+                let _ = self.reverse_vars.remove(name);
+                VarId(id)
+            }
+            ScopeDelta::Shadowed {
+                old,
+                new: VarId(new),
+            } => {
+                let name = &self.vars[new].name;
+
+                let _ = self.reverse_vars.insert(name.into(), old);
+                VarId(new)
+            }
+        })
+    }
+}
 
 /// A function body
 #[derive(Debug)]
@@ -128,6 +208,7 @@ pub struct Fun {
 #[derive(Debug)]
 pub struct Unit {
     pub funpool: Vec<Fun>,
+    pub scope: Scope,
     pub constpool: Vec<Const>,
     pub expr: Expr,
 }
@@ -139,6 +220,10 @@ impl Unit {
 
     pub fn lookup_fun(&self, FunId(fid): &FunId) -> Option<&Fun> {
         self.funpool.get(*fid)
+    }
+
+    pub fn lookup_var(&self, VarId(vid): &VarId) -> Option<&Var> {
+        self.scope.vars.get(*vid)
     }
 }
 
@@ -203,6 +288,7 @@ pub struct TypeChecker {
     funpool: Vec<Fun>,
     reverse_fun: BTreeMap<String, FunId>,
     stubd: BTreeSet<usize>,
+    scope: Scope,
 }
 
 impl TypeChecker {
@@ -347,6 +433,8 @@ impl TypeChecker {
             true,
         );
         tr.add_stub_fun("rand", Ty::Num, &[], true);
+        // Standard library variables
+        tr.scope.push_var("PI", Ty::Num);
 
         // First, add the stub functions
         tr.create_fun_stubs(ast)?;
@@ -380,6 +468,7 @@ impl TypeChecker {
             constpool: tr.constpool,
             expr: glob.ok_or(TypeError::NoGlobExpr)?,
             funpool: tr.funpool,
+            scope: tr.scope.clone(),
         })
     }
 
@@ -442,8 +531,18 @@ impl TypeChecker {
             });
         }
 
+        // Add variables to scope
+        for arg in self.funpool[fid].args.iter() {
+            self.scope.push_var(&arg.name, arg.ty);
+        }
+
         // Transform the function body
         let body = self.to_expr(&fun.body)?;
+
+        // Undo (maybe drop?)
+        for _ in 0..self.funpool[fid].args.len() {
+            self.scope.undo();
+        }
 
         // Add the function to the pool
         self.update_fn_body(&FunId(fid), FunBody::Expr(body));
@@ -555,6 +654,20 @@ impl TypeChecker {
                 Expr::Block {
                     ty: instrs.last().map(|e: &Expr| e.ty()).unwrap_or(Ty::Obj),
                     insts: instrs,
+                }
+            }
+
+            crate::ast::Expr::Id(name) => {
+                let VarId(vid) = self
+                    .scope
+                    .reverse_vars
+                    .get(name)
+                    .ok_or(TypeError::UnknownVar { name: name.into() })?;
+                let var = &self.scope.vars[*vid];
+
+                Expr::VarRead {
+                    ty: var.ty,
+                    var: var.id,
                 }
             }
 
