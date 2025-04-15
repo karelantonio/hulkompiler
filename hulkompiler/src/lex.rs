@@ -117,7 +117,7 @@ pub fn tokenize_data<'a>(data: &'a str) -> Result<Vec<LocTk<'a>>, LexError> {
 
         if let Tk::Nl = tok {
             line += 1;
-            prevlen = tk.span().end;
+            prevlen = tk.span().end - 1;
             continue;
         }
 
