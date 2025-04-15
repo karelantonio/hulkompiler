@@ -22,7 +22,9 @@ const STD: &[&str] = &[
     "# Standard library of HULK",
     "from math import sin, cos, sqrt, exp, log, pi",
     "from random import uniform",
-    "def hk_print(arg:object)->object: print(arg)",
+    "def hk_print(arg:object)->object:",
+    " print(arg)",
+    " return object()",
     "def hk_sqrt(n:float)->float: return sqrt(n)",
     "def hk_sin(n:float)->float: return sin(n)",
     "def hk_cos(n:float)->float: return cos(n)",
@@ -66,6 +68,9 @@ impl PyFile {
     /// Dump multiple instructions
     pub fn dump_instrs(&self, depth: usize, isfun: bool, instrs: &[Instr], out: &mut Vec<String>) {
         let len = instrs.len();
+        if len==0 {
+            self.dump_instr(depth, true, &Instr::Instr("object()".into()), out);
+        }
         for (i, instr) in instrs.iter().enumerate() {
             self.dump_instr(depth, isfun && i == len - 1, instr, out);
         }
