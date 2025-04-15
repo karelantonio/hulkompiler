@@ -525,6 +525,15 @@ impl TypeChecker {
             true,
         );
         tr.add_stub_fun("rand", Ty::Num, &[], true);
+        tr.add_stub_fun(
+            "floor",
+            Ty::Num,
+            &[FunArg {
+                name: "arg0".into(),
+                ty: Ty::Num,
+            }],
+            true,
+        );
         // Standard library variables
         tr.scope.push_var("PI", Ty::Num);
 

@@ -20,7 +20,7 @@ pub struct PyFile {
 
 const STD: &[&str] = &[
     "# Standard library of HULK",
-    "from math import sin, cos, sqrt, exp, log, pi",
+    "from math import sin, cos, sqrt, exp, log, pi, floor",
     "from random import uniform",
     "def hk_print(arg:object)->object:",
     " print(arg)",
@@ -30,6 +30,7 @@ const STD: &[&str] = &[
     "def hk_cos(n:float)->float: return cos(n)",
     "def hk_exp(n:float)->float: return exp(n)",
     "def hk_log(b:float,a:float)->float: return log(a, base=b)",
+    "def hk_floor(x:float)->float: return floor(x)",
     "def hk_rand()->float: return uniform(0, 1)",
     "hkv_PI = pi",
     "# End of HULK standard library",
@@ -146,7 +147,7 @@ impl<'a> Emitter<'a> {
         let args = fun
             .args
             .iter()
-            .map(|e| format!("{}:{}", e.name, self.ty_to_py(&e.ty)))
+            .map(|e| format!("hkv_{}:{}", e.name, self.ty_to_py(&e.ty)))
             .collect::<Vec<_>>();
         let ret = self.ty_to_py(&fun.ty);
 
