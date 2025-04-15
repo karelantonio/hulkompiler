@@ -74,6 +74,10 @@ pub enum Expr {
         ty: Ty,
         insts: Vec<Expr>,
     },
+    ImplicitCast {
+        ty: Ty,
+        expr: Box<Expr>,
+    },
 }
 
 impl Expr {
@@ -82,7 +86,8 @@ impl Expr {
             Self::Const { ty, .. } => ty,
             Self::BinOp { ty, .. } => ty,
             Self::Call { ty, .. } => ty,
-            Self::Block { ty, insts: _ } => ty,
+            Self::Block { ty, .. } => ty,
+            Self::ImplicitCast { ty, .. } => ty,
         }
     }
 
@@ -159,7 +164,7 @@ pub enum TypeError {
         found: usize,
     },
 
-    #[error("{idx}th argument ({name}) type mismatch, expected: {exp:?}, found: {found:?}")]
+    #[error("{idx}th argument ({name}) type mismatch, the given type ({found:?}) can not be interpreted as {exp:?} (does not conform {exp:?})")]
     FnArgMismatch {
         idx: usize,
         name: String,
@@ -168,11 +173,11 @@ pub enum TypeError {
     },
 
     #[error(
-        "No global expression found, try print(\"Hello world\"); at the bottom of your program"
+        "No global expression found, try `print(\"Hello world\");` at the bottom of your program"
     )]
     NoGlobExpr,
 
-    #[error("Multiple global expressions were found, but only 1 is allowed")]
+    #[error("Multiple global expressions were found, but only 1 is allowed, try removing one of those or group them using a code block '{{ ... }}' ")]
     MultipleGlobExpr,
 
     #[error("A function with the same name ({name}) is already defined, try another name or use a prefix")]
@@ -184,7 +189,7 @@ pub enum TypeError {
     #[error("Function without return type are not supported yet: {name}, try specifying a type: `): Smthn`")]
     FnNoRetType { name: String },
 
-    #[error("Function return mismatch: declared return type: {ret}, but body returns: {bod}")]
+    #[error("Function return mismatch, body type ({bod}) can not be interpreted as ({ret}) (does not conform {ret})")]
     FnRetMismatch { ret: String, bod: String },
 }
 
@@ -267,6 +272,13 @@ impl TypeChecker {
         })
     }
 
+    fn ty_conforms(&self, from: &Ty, to: &Ty) -> bool {
+        match to {
+            Ty::Obj => true,
+            another => another == from,
+        }
+    }
+
     /// Transform the given expresion to the given unit
     pub fn transform(ast: &[crate::ast::RootElem]) -> TResult<Unit> {
         // Transform this expr to our expr
@@ -278,7 +290,7 @@ impl TypeChecker {
             Ty::Obj,
             &[FunArg {
                 name: "arg0".into(),
-                ty: Ty::Str,
+                ty: Ty::Obj,
             }],
             true,
         );
@@ -501,10 +513,10 @@ impl TypeChecker {
 
                 for (i, arg) in fun.args.iter().enumerate() {
                     // Check if args match
-                    let expr = self.to_expr(arg)?;
+                    let mut expr = self.to_expr(arg)?;
 
                     let req = self.funpool[funid].args[i].clone();
-                    if expr.ty() != req.ty {
+                    if !self.ty_conforms(&expr.ty(), &req.ty) {
                         // Argument type mismatch
                         return Err(TypeError::FnArgMismatch {
                             idx: i + 1,
@@ -512,6 +524,15 @@ impl TypeChecker {
                             exp: req.ty,
                             found: expr.ty(),
                         });
+                    }
+                    // We might introduce an implicit cast if they're different
+                    if expr.ty() != req.ty {
+                        // TODO: Check whether we are not doing two implicit casts, if so reduce to
+                        // one
+                        expr = Expr::ImplicitCast {
+                            ty: req.ty,
+                            expr: Box::new(expr),
+                        };
                     }
 
                     args.push(expr);

@@ -22,7 +22,7 @@ const STD: &[&str] = &[
     "# Standard library of HULK",
     "from math import sin, cos, sqrt, exp, log",
     "from random import uniform",
-    "def hk_print(arg:str)->object: print(arg)",
+    "def hk_print(arg:object)->object: print(arg)",
     "def hk_sqrt(n:float)->float: return sqrt(n)",
     "def hk_sin(n:float)->float: return sin(n)",
     "def hk_cos(n:float)->float: return cos(n)",
@@ -250,6 +250,10 @@ impl<'a> Emitter<'a> {
             }
             hir::Expr::Block { ty: _, insts: _ } => {
                 Instr::Instr(format!("{}()", self.block_as_py_fun(outp, expr)))
+            }
+            hir::Expr::ImplicitCast { ty: _, expr } => {
+                // In python is not required to do any black magic, just ol' polimorphism
+                self.expr_to_py(outp, expr)
             }
         }
     }
