@@ -9,6 +9,7 @@ use thiserror::Error;
 pub struct Loc {
     pub start: Addr,
     pub end: Addr,
+    pub content: Rc<[String]>,
 }
 
 /// A binary operator
@@ -56,6 +57,19 @@ pub enum Expr {
     BlockExpr(BlockExpr),
 }
 
+impl Expr {
+    pub fn loc(&self) -> &Loc {
+        match self {
+            Expr::Num(loc, _) => loc,
+            Expr::Id(loc, _) => loc,
+            Expr::Str(loc, _) => loc,
+            Expr::BinOpExpr(BinOpExpr { loc, .. }) => loc,
+            Expr::FunCallExpr(FunCallExpr { loc, .. }) => loc,
+            Expr::BlockExpr(BlockExpr { loc, .. }) => loc,
+        }
+    }
+}
+
 /// A function argument
 #[derive(Debug)]
 pub struct FunArg {
@@ -79,6 +93,15 @@ pub struct FunDecl {
 pub enum RootElem {
     FunDecl(FunDecl),
     Statement(Expr),
+}
+
+impl RootElem {
+    pub fn loc(&self) -> &Loc {
+        match self {
+            RootElem::FunDecl(FunDecl { loc, .. }) => loc,
+            RootElem::Statement(stm) => stm.loc(),
+        }
+    }
 }
 
 /// Errors that may happen while parsing
@@ -270,6 +293,7 @@ impl<'a> Parser<'a> {
 
         // Done :)
         let loc = Loc {
+            content: self.text.clone(),
             start: loc_start,
             end: loc_end,
         };
@@ -312,6 +336,7 @@ impl<'a> Parser<'a> {
 
         // the location
         let loc = Loc {
+            content: self.text.clone(),
             start: loc_start,
             end: self.prev_addr_end().clone(),
         };
@@ -386,6 +411,7 @@ impl<'a> Parser<'a> {
         self.take();
 
         let loc = Loc {
+            content: self.text.clone(),
             start: loc_start,
             end: self.prev_addr_end().clone(),
         };
@@ -402,6 +428,7 @@ impl<'a> Parser<'a> {
             [Tk::Add, ..] => {
                 self.take();
                 let loc = Loc {
+                    content: self.text.clone(),
                     start: loc_start,
                     end: self.prev_addr_end().clone(),
                 };
@@ -415,6 +442,7 @@ impl<'a> Parser<'a> {
             [Tk::Minus, ..] => {
                 self.take();
                 let loc = Loc {
+                    content: self.text.clone(),
                     start: loc_start,
                     end: self.prev_addr_end().clone(),
                 };
@@ -439,6 +467,7 @@ impl<'a> Parser<'a> {
             [Tk::Star, ..] => {
                 self.take();
                 let loc = Loc {
+                    content: self.text.clone(),
                     start: loc_start,
                     end: self.prev_addr_end().clone(),
                 };
@@ -452,6 +481,7 @@ impl<'a> Parser<'a> {
             [Tk::Slash, ..] => {
                 self.take();
                 let loc = Loc {
+                    content: self.text.clone(),
                     start: loc_start,
                     end: self.prev_addr_end().clone(),
                 };
@@ -479,6 +509,7 @@ impl<'a> Parser<'a> {
         let exp = self.reduce_expr_atom()?;
 
         let loc = Loc {
+            content: self.text.clone(),
             start: loc_start,
             end: self.prev_addr_end().clone(),
         };
@@ -500,6 +531,7 @@ impl<'a> Parser<'a> {
                 // Found number, advance and return gracefully
                 let loc_end = self.addr_end().clone();
                 let loc = Loc {
+                    content: self.text.clone(),
                     start: loc_start.clone(),
                     end: loc_end.clone(),
                 };
@@ -518,6 +550,7 @@ impl<'a> Parser<'a> {
             // Constant string (should escape characters later
             [Tk::Str, ..] => {
                 let loc = Loc {
+                    content: self.text.clone(),
                     start: loc_start.clone(),
                     end: self.addr_end().clone(),
                 };
@@ -532,6 +565,7 @@ impl<'a> Parser<'a> {
             [Tk::Id, ..] => {
                 // Pop the identifier
                 let loc = Loc {
+                    content: self.text.clone(),
                     start: loc_start.clone(),
                     end: self.addr_end().clone(),
                 };
@@ -576,6 +610,7 @@ impl<'a> Parser<'a> {
             self.take(); // )
 
             let loc = Loc {
+                content: self.text.clone(),
                 start: loc_start,
                 end: self.prev_addr_end().clone(),
             };
@@ -609,6 +644,7 @@ impl<'a> Parser<'a> {
         }
 
         let loc = Loc {
+            content: self.text.clone(),
             start: loc_start,
             end: self.prev_addr_end().clone(),
         };

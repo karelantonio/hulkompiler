@@ -1,6 +1,10 @@
 //! The high-level intermediate representation of the language
 //! Makes easy the type-checking phase :)
 
+use crate::{
+    ast::Loc,
+    sourcehint::{make, LocError},
+};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -231,19 +235,36 @@ impl Unit {
 #[derive(Debug, Error)]
 pub enum TypeError {
     #[error("Unknown reference to function: {name}")]
-    UnknownFun { name: String },
+    UnknownFun {
+        name: String,
+        #[source]
+        loc: LocError,
+    },
 
     #[error("Unknown reference to type: {name}")]
-    UnknownTy { name: String },
+    UnknownTy {
+        name: String,
+        #[source]
+        loc: LocError,
+    },
 
     #[error("Unknown reference to variable: {name}")]
-    UnknownVar { name: String },
+    UnknownVar {
+        name: String,
+        #[source]
+        loc: LocError,
+    },
 
     #[error("Both expressions must be numbers in order to apply an arithmetic operator")]
-    ExprMustBeNumbers,
+    ExprMustBeNumbers {
+        #[source]
+        loc: LocError,
+    },
 
     #[error("Required {req} args for function {fname} but {found} were provided")]
     InvalidNumberOfArgs {
+        #[source]
+        loc: LocError,
         req: usize,
         fname: String,
         found: usize,
@@ -251,6 +272,8 @@ pub enum TypeError {
 
     #[error("{idx}th argument ({name}) type mismatch, the given type ({found:?}) can not be interpreted as {exp:?} (does not conform {exp:?})")]
     FnArgMismatch {
+        #[source]
+        loc: LocError,
         idx: usize,
         name: String,
         exp: Ty,
@@ -263,19 +286,39 @@ pub enum TypeError {
     NoGlobExpr,
 
     #[error("Multiple global expressions were found, but only 1 is allowed, try removing one of those or group them using a code block '{{ ... }}' ")]
-    MultipleGlobExpr,
+    MultipleGlobExpr {
+        #[source]
+        loc: LocError,
+    },
 
     #[error("A function with the same name ({name}) is already defined, try another name or use a prefix")]
-    DupdFun { name: String },
+    DupdFun {
+        name: String,
+        #[source]
+        loc: LocError,
+    },
 
-    #[error("Function arguments with no type are not supported yet, try specifying the type: `..{name}: Smthn`")]
-    FnArgNoType { name: String },
+    #[error("Function arguments with no type are not supported yet, try specifying the type: `..{name}: Object`")]
+    FnArgNoType {
+        name: String,
+        #[source]
+        loc: LocError,
+    },
 
-    #[error("Function without return type are not supported yet: {name}, try specifying a type: `): Smthn`")]
-    FnNoRetType { name: String },
+    #[error("Function without return type are not supported yet: {name}, try specifying a type: `): Object`")]
+    FnNoRetType {
+        name: String,
+        #[source]
+        loc: LocError,
+    },
 
     #[error("Function return mismatch, body type ({bod}) can not be interpreted as ({ret}) (does not conform {ret})")]
-    FnRetMismatch { ret: String, bod: String },
+    FnRetMismatch {
+        ret: String,
+        bod: String,
+        #[source]
+        loc: LocError,
+    },
 }
 
 type TResult<T> = Result<T, TypeError>;
@@ -363,6 +406,10 @@ impl TypeChecker {
             Ty::Obj => true,
             another => another == from,
         }
+    }
+
+    fn make_loc_err(&self, loc: &Loc) -> LocError {
+        make(&loc.content, &loc.start, &loc.end)
     }
 
     /// Transform the given expresion to the given unit
@@ -458,7 +505,9 @@ impl TypeChecker {
 
             if glob.is_some() {
                 // Already found a glob expression
-                return Err(TypeError::MultipleGlobExpr);
+                return Err(TypeError::MultipleGlobExpr {
+                    loc: tr.make_loc_err(elem.loc()),
+                });
             }
 
             glob = Some(tr.to_expr(expr)?);
@@ -486,23 +535,27 @@ impl TypeChecker {
                     let tyname = e.ty.clone();
 
                     let argty = &tyname.ok_or(TypeError::FnArgNoType {
+                        loc: self.make_loc_err(&fun.loc),
                         name: aname.clone(),
                     })?;
                     Ok(FunArg {
                         name: aname.clone(),
-                        ty: self
-                            .str_to_ty(&argty)
-                            .ok_or(TypeError::UnknownTy { name: aname.into() })?,
+                        ty: self.str_to_ty(&argty).ok_or(TypeError::UnknownTy {
+                            loc: self.make_loc_err(&fun.loc),
+                            name: aname.into(),
+                        })?,
                     })
                 })
                 .collect::<Result<Vec<_>, TypeError>>()?;
 
             let ret = fun.ret.clone().ok_or(TypeError::FnNoRetType {
+                loc: self.make_loc_err(&fun.loc),
                 name: fun.name.clone(),
             })?;
-            let ret = self
-                .str_to_ty(&ret)
-                .ok_or(TypeError::UnknownTy { name: ret.into() })?;
+            let ret = self.str_to_ty(&ret).ok_or(TypeError::UnknownTy {
+                loc: self.make_loc_err(&fun.loc),
+                name: ret.into(),
+            })?;
 
             self.add_stub_fun(&fun.name, ret, &args, false);
         }
@@ -527,6 +580,7 @@ impl TypeChecker {
 
         if !self.is_stub(&FunId(fid)) {
             return Err(TypeError::DupdFun {
+                loc: self.make_loc_err(&fun.loc),
                 name: fun.name.clone(),
             });
         }
@@ -572,7 +626,9 @@ impl TypeChecker {
                 if op.is_arithmetic()
                     && !(matches!(left.ty(), Ty::Num) && matches!(right.ty(), Ty::Num))
                 {
-                    return Err(TypeError::ExprMustBeNumbers);
+                    return Err(TypeError::ExprMustBeNumbers {
+                        loc: self.make_loc_err(&binop.loc),
+                    });
                 }
 
                 Expr::BinOp {
@@ -589,6 +645,7 @@ impl TypeChecker {
                     .reverse_fun
                     .get(&fun.name)
                     .ok_or(TypeError::UnknownFun {
+                        loc: self.make_loc_err(&fun.loc),
                         name: fun.name.clone(),
                     })?
                     .clone();
@@ -598,6 +655,7 @@ impl TypeChecker {
 
                     if fun.args.len() != funref.args.len() {
                         return Err(TypeError::InvalidNumberOfArgs {
+                            loc: self.make_loc_err(&fun.loc),
                             req: funref.args.len(),
                             fname: funref.name.clone(),
                             found: fun.args.len(),
@@ -618,6 +676,7 @@ impl TypeChecker {
                     if !self.ty_conforms(&expr.ty(), &req.ty) {
                         // Argument type mismatch
                         return Err(TypeError::FnArgMismatch {
+                            loc: self.make_loc_err(arg.loc()),
                             idx: i + 1,
                             name: req.name,
                             exp: req.ty,
@@ -657,22 +716,21 @@ impl TypeChecker {
                 }
             }
 
-            crate::ast::Expr::Id(_, name) => {
-                let VarId(vid) = self
-                    .scope
-                    .reverse_vars
-                    .get(name)
-                    .ok_or(TypeError::UnknownVar { name: name.into() })?;
+            crate::ast::Expr::Id(loc, name) => {
+                let VarId(vid) =
+                    self.scope
+                        .reverse_vars
+                        .get(name)
+                        .ok_or(TypeError::UnknownVar {
+                            name: name.into(),
+                            loc: self.make_loc_err(&loc),
+                        })?;
                 let var = &self.scope.vars[*vid];
 
                 Expr::VarRead {
                     ty: var.ty,
                     var: var.id,
                 }
-            }
-
-            e => {
-                panic!("Unsupported expresion: {e:?}");
             }
         })
     }
