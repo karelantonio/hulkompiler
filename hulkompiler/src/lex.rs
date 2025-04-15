@@ -75,7 +75,7 @@ pub enum Tk {
     #[token(";")]
     Semicolon,
 
-    #[regex(r#"\"(\\"|[^"])*\""#)]
+    #[regex(r#"\"(\\"|[^"\n])*\""#)]
     Str,
 
     // Identifiers
@@ -86,8 +86,22 @@ pub enum Tk {
     Num,
 }
 
+#[derive(Debug, Clone)]
+pub struct Addr {
+    pub line: usize,
+    pub col: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocTk<'a> {
+    pub start: Addr,
+    pub end: Addr,
+    pub slice: &'a str,
+    pub tk: Tk,
+}
+
 /// Tokenize the data and report any error found, return a list of: (line, token, slice)
-pub fn tokenize_data<'a>(data: &'a str) -> Result<Vec<(usize, Tk, &'a str)>, LexError> {
+pub fn tokenize_data<'a>(data: &'a str) -> Result<Vec<LocTk<'a>>, LexError> {
     let mut tk = Tk::lexer(data);
     let mut res = Vec::new();
     let (mut line, mut prevlen) = (1usize, 0usize);
@@ -101,13 +115,24 @@ pub fn tokenize_data<'a>(data: &'a str) -> Result<Vec<(usize, Tk, &'a str)>, Lex
             });
         };
 
-        if let Tk::Nl = tok{
+        if let Tk::Nl = tok {
             line += 1;
             prevlen = tk.span().end;
             continue;
         }
 
-        res.push((line, tok, tk.slice()));
+        res.push(LocTk {
+            start: Addr {
+                line,
+                col: tk.span().start - prevlen,
+            },
+            end: Addr {
+                line,
+                col: tk.span().end - 1 - prevlen,
+            },
+            slice: tk.slice(),
+            tk: tok,
+        });
     }
 
     Ok(res)

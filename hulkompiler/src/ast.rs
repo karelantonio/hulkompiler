@@ -1,8 +1,15 @@
 //! Parse module: transform a list of tokens into higher-level language structures
 
-use crate::lex::{LexError, Tk};
-use std::borrow::Cow;
+use crate::lex::{Addr, LexError, Tk};
+use std::{borrow::Cow, rc::Rc};
 use thiserror::Error;
+
+/// Location
+#[derive(Debug, Clone)]
+pub struct Loc {
+    pub start: Addr,
+    pub end: Addr,
+}
 
 /// A binary operator
 #[derive(Debug)]
@@ -17,6 +24,7 @@ pub enum BinOp {
 /// Add two values
 #[derive(Debug)]
 pub struct BinOpExpr {
+    pub loc: Loc,
     pub op: BinOp,
     pub left: Box<Expr>,
     pub right: Box<Expr>,
@@ -25,6 +33,7 @@ pub struct BinOpExpr {
 /// A function call expression
 #[derive(Debug)]
 pub struct FunCallExpr {
+    pub loc: Loc,
     pub name: String,
     pub args: Vec<Expr>,
 }
@@ -32,15 +41,16 @@ pub struct FunCallExpr {
 /// A block, a sequence of expressions between { }
 #[derive(Debug)]
 pub struct BlockExpr {
+    pub loc: Loc,
     pub exprs: Vec<Expr>,
 }
 
 // An expression
 #[derive(Debug)]
 pub enum Expr {
-    Num(f64),
-    Id(String),
-    Str(String),
+    Num(Loc, f64),
+    Id(Loc, String),
+    Str(Loc, String),
     BinOpExpr(BinOpExpr),
     FunCallExpr(FunCallExpr),
     BlockExpr(BlockExpr),
@@ -49,6 +59,7 @@ pub enum Expr {
 /// A function argument
 #[derive(Debug)]
 pub struct FunArg {
+    pub loc: Loc,
     pub name: String,
     pub ty: Option<String>,
 }
@@ -56,6 +67,7 @@ pub struct FunArg {
 /// A function declaration
 #[derive(Debug)]
 pub struct FunDecl {
+    pub loc: Loc,
     pub name: String,
     pub args: Vec<FunArg>,
     pub ret: Option<String>,
@@ -75,10 +87,11 @@ pub enum ParseError {
     #[error("Could not tokenize the data")]
     Lexing(#[from] LexError),
 
-    #[error("Unexpected token {tok:?} at line: {line}, expecting one of: {expected:?} (Near: ...{value}...)")]
+    #[error("Unexpected token {tok:?}, expecting one of: {expected:?}")]
     Unexpected {
+        #[source]
+        addr: crate::sourcehint::LocError,
         tok: Tk, // to make the borrow checker happy :)
-        line: usize,
         value: String,
         expected: Cow<'static, [Tk]>,
     },
@@ -86,11 +99,12 @@ pub enum ParseError {
     #[error("Reached end of file, expecting one of: {expected:?}")]
     EarlyEof { expected: Cow<'static, [Tk]> },
 
-    #[error("Could not parse number: {value}")]
+    #[error("Could not parse number {value}: {err}")]
     ParseNum {
-        value: String,
         #[source]
+        loc: crate::sourcehint::LocError,
         err: std::num::ParseFloatError,
+        value: String,
     },
 }
 
@@ -98,8 +112,10 @@ pub enum ParseError {
 pub struct Parser<'a> {
     ptr: usize,
     data: Vec<Tk>,
-    lines: Vec<usize>,
+    start: Vec<Addr>,
+    end: Vec<Addr>,
     slices: Vec<&'a str>,
+    text: Rc<[String]>, /* Lines */
 }
 
 type PResult<T> = Result<T, ParseError>;
@@ -108,11 +124,14 @@ impl<'a> Parser<'a> {
     /// Parse the given string of data
     pub fn parse(data: &str) -> Result<Vec<RootElem>, ParseError> {
         let lex = crate::lex::tokenize_data(data)?;
+        let lines = data.split('\n').map(|e| e.to_string()).collect::<Vec<_>>();
         let mut parser = Parser {
             ptr: 0,
-            data: lex.iter().map(|(_, tk, _)| tk.clone()).collect(),
-            lines: lex.iter().map(|(line, _, _)| *line).collect(),
-            slices: lex.iter().map(|(_, _, sli)| *sli).collect(),
+            data: lex.iter().map(|e| e.tk.clone()).collect(),
+            start: lex.iter().map(|e| e.start.clone()).collect(),
+            end: lex.iter().map(|e| e.end.clone()).collect(),
+            slices: lex.iter().map(|e| e.slice).collect(),
+            text: lines.into(),
         };
 
         let mut res = Vec::new();
@@ -137,14 +156,31 @@ impl<'a> Parser<'a> {
         val
     }
 
+    fn addr_start(&self) -> &Addr {
+        &self.start[self.ptr]
+    }
+
+    fn addr_end(&self) -> &Addr {
+        &self.end[self.ptr]
+    }
+
+    fn prev_addr_end(&self) -> &Addr {
+        &self.end[self.ptr - 1] // Ok to panic, should alread have parsed some token
+    }
+
+    fn make_loc_error(&self, start: &Addr, end: &Addr) -> crate::sourcehint::LocError {
+        crate::sourcehint::make(&self.text, start, end)
+    }
+
     fn remaining(&self) -> &[Tk] {
         &self.data[self.ptr..]
     }
 
     fn unexpected(&mut self, exp: &'static [Tk]) -> ParseError {
         if let Some(tok) = self.data.get(self.ptr) {
+            let (start, end) = (self.start[self.ptr].clone(), self.end[self.ptr].clone());
             ParseError::Unexpected {
-                line: self.lines[self.ptr],
+                addr: crate::sourcehint::make(&self.text, &start, &end),
                 expected: exp.into(),
                 tok: tok.clone(),
                 value: self.slices[self.ptr].into(),
@@ -169,6 +205,9 @@ impl<'a> Parser<'a> {
     /// Reduce a function declaration
     /// <fun-decl> ::= "function" ID '(' <args>... ')' <fun-body>
     fn reduce_fun_decl(&mut self) -> PResult<FunDecl> {
+        // Should we only highlight the function declaration, not the body?
+        let loc_start = self.addr_start().clone();
+
         // Expect function kw
         match self.remaining() {
             [Tk::Function, ..] => {
@@ -219,6 +258,7 @@ impl<'a> Parser<'a> {
         };
 
         // Expect either a fat arrow of a code block
+        let loc_end = self.prev_addr_end().clone();
         let body = match self.remaining() {
             [Tk::RArrow, ..] => {
                 self.take();
@@ -229,7 +269,12 @@ impl<'a> Parser<'a> {
         };
 
         // Done :)
+        let loc = Loc {
+            start: loc_start,
+            end: loc_end,
+        };
         Ok(FunDecl {
+            loc,
             name,
             args,
             ret,
@@ -246,6 +291,7 @@ impl<'a> Parser<'a> {
     }
 
     fn reduce_fun_args_inner(&mut self, out: &mut Vec<FunArg>) -> PResult<()> {
+        let loc_start = self.addr_start().clone();
         let name = match self.remaining() {
             [Tk::Id, ..] => self.take().into(),
             _ => return Err(self.unexpected(&[Tk::Id, Tk::RPar])),
@@ -264,7 +310,13 @@ impl<'a> Parser<'a> {
             _ => None,
         };
 
-        let arg = FunArg { name, ty };
+        // the location
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+        };
+
+        let arg = FunArg { loc, name, ty };
         out.push(arg);
 
         // Check if there is more
@@ -319,6 +371,8 @@ impl<'a> Parser<'a> {
     /// Reduce an expression block
     /// <exp-block> ::= '{' <stmt> ... '}'
     fn reduce_expr_block(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+
         let _ = match self.remaining() {
             [Tk::LBrac, ..] => self.take(),
             _ => return Err(self.unexpected(&[Tk::LBrac])),
@@ -331,18 +385,28 @@ impl<'a> Parser<'a> {
         }
         self.take();
 
-        Ok(Expr::BlockExpr(BlockExpr { exprs: stm }))
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+        };
+        Ok(Expr::BlockExpr(BlockExpr { loc, exprs: stm }))
     }
 
     /// Reduce a sum of values
     /// <sum> :: <mult> [ ('+'|'-') <mult> ]
     fn reduce_expr_sum(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
         let lhs = self.reduce_expr_mult()?;
 
         Ok(match self.remaining() {
             [Tk::Add, ..] => {
                 self.take();
+                let loc = Loc {
+                    start: loc_start,
+                    end: self.prev_addr_end().clone(),
+                };
                 Expr::BinOpExpr(BinOpExpr {
+                    loc,
                     op: BinOp::Add,
                     left: lhs.into(),
                     right: self.reduce_expr_sum()?.into(),
@@ -350,7 +414,12 @@ impl<'a> Parser<'a> {
             }
             [Tk::Minus, ..] => {
                 self.take();
+                let loc = Loc {
+                    start: loc_start,
+                    end: self.prev_addr_end().clone(),
+                };
                 Expr::BinOpExpr(BinOpExpr {
+                    loc,
                     op: BinOp::Sub,
                     left: lhs.into(),
                     right: self.reduce_expr_sum()?.into(),
@@ -363,70 +432,114 @@ impl<'a> Parser<'a> {
     /// Reduce a posible multiplication
     /// <mult> ::= <factor-or-power> [ ('*'|'/') <mult> ] ...
     fn reduce_expr_mult(&mut self) -> PResult<Expr> {
-        let b = self.reduce_expr_factor_or_power()?;
+        let loc_start = self.addr_start().clone();
+        let fst = self.reduce_expr_factor_or_power()?;
 
         Ok(match self.remaining() {
             [Tk::Star, ..] => {
                 self.take();
+                let loc = Loc {
+                    start: loc_start,
+                    end: self.prev_addr_end().clone(),
+                };
                 Expr::BinOpExpr(BinOpExpr {
+                    loc,
                     op: BinOp::Mult,
-                    left: b.into(),
+                    left: fst.into(),
                     right: self.reduce_expr_mult()?.into(),
                 })
             }
             [Tk::Slash, ..] => {
                 self.take();
+                let loc = Loc {
+                    start: loc_start,
+                    end: self.prev_addr_end().clone(),
+                };
                 Expr::BinOpExpr(BinOpExpr {
+                    loc,
                     op: BinOp::Div,
-                    left: b.into(),
+                    left: fst.into(),
                     right: self.reduce_expr_mult()?.into(),
                 })
             }
-            _ => b,
+            _ => fst,
         })
     }
 
     /// Reduce an power expresion or just an atom
     /// <factor-or-power> ::= <atom> [ ^ <atom> ]
     fn reduce_expr_factor_or_power(&mut self) -> PResult<Expr> {
-        let b = self.reduce_expr_atom()?;
+        let loc_start = self.addr_start().clone();
+
+        let base = self.reduce_expr_atom()?;
         let _ = match self.remaining() {
             [Tk::Power, ..] => self.take(),
-            _ => return Ok(b),
+            _ => return Ok(base),
         };
-        let e = self.reduce_expr_atom()?;
+        let exp = self.reduce_expr_atom()?;
 
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+        };
         Ok(Expr::BinOpExpr(BinOpExpr {
+            loc,
             op: BinOp::Pwr,
-            left: b.into(),
-            right: e.into(),
+            left: base.into(),
+            right: exp.into(),
         }))
     }
 
     /// Reduce an atom
     /// <atom> ::= <number> | <ident> | <string> | '(' <expr> ')' | <fn-call>
     fn reduce_expr_atom(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
         match self.remaining() {
+            // Constant number
             [Tk::Num, ..] => {
                 // Found number, advance and return gracefully
+                let loc_end = self.addr_end().clone();
+                let loc = Loc {
+                    start: loc_start.clone(),
+                    end: loc_end.clone(),
+                };
                 let sli = self.take();
-                Ok(Expr::Num(sli.parse().map_err(|e| {
-                    ParseError::ParseNum {
+
+                Ok(Expr::Num(
+                    loc,
+                    sli.parse().map_err(|e| ParseError::ParseNum {
                         value: sli.into(),
                         err: e,
-                    }
-                })?))
+                        loc: self.make_loc_error(&loc_start, &loc_end),
+                    })?,
+                ))
             }
+
+            // Constant string (should escape characters later
             [Tk::Str, ..] => {
+                let loc = Loc {
+                    start: loc_start.clone(),
+                    end: self.addr_end().clone(),
+                };
                 let stri = self.take();
-                Ok(Expr::Str(stri[1..stri.len() - 1].into()))
+                Ok(Expr::Str(loc, stri[1..stri.len() - 1].into()))
             }
+
+            // A function call
             [Tk::Id, Tk::LPar, ..] => self.reduce_expr_fn_call(),
+
+            // A variable
             [Tk::Id, ..] => {
                 // Pop the identifier
+                let loc = Loc {
+                    start: loc_start.clone(),
+                    end: self.addr_end().clone(),
+                };
                 let id = self.take();
-                Ok(Expr::Id(id.into()))
+                Ok(Expr::Id(loc, id.into()))
             }
+
+            // A parenthesized expresion
             [Tk::LPar, ..] => {
                 self.take();
                 let sub = self.reduce_expr()?;
@@ -444,6 +557,8 @@ impl<'a> Parser<'a> {
 
     /// Reduce a function call
     fn reduce_expr_fn_call(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+
         let id = match self.remaining() {
             [Tk::Id, ..] => self.take(),
             _ => return Err(self.unexpected(&[Tk::Id])),
@@ -458,8 +573,14 @@ impl<'a> Parser<'a> {
 
         // If there is a rpar just after (  (i.e: name()  )
         if matches!(self.remaining(), [Tk::RPar, ..]) {
-            self.take();
+            self.take(); // )
+
+            let loc = Loc {
+                start: loc_start,
+                end: self.prev_addr_end().clone(),
+            };
             return Ok(Expr::FunCallExpr(FunCallExpr {
+                loc,
                 name: id.into(),
                 args: Vec::new(),
             }));
@@ -487,7 +608,13 @@ impl<'a> Parser<'a> {
             }
         }
 
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+        };
+
         Ok(Expr::FunCallExpr(FunCallExpr {
+            loc,
             name: id.into(),
             args,
         }))

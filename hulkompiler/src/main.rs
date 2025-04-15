@@ -216,10 +216,7 @@ fn cmd_dumplex(binname: &str, args: Args) -> Result<()> {
     let data = std::fs::read_to_string(file)?;
 
     // Lex the contents
-    let res = hulkompiler::lex::tokenize_data(&data)?
-        .into_iter()
-        .map(|(_, tk, slic)| (tk, slic))
-        .collect::<Vec<_>>();
+    let res = hulkompiler::lex::tokenize_data(&data)?;
     println!("Result:");
     if wide {
         println!("{res:#?}");

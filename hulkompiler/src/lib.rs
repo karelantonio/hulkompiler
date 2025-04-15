@@ -12,3 +12,6 @@ pub mod hir;
 
 /// To emit code to other languages (transpile)
 pub mod emit;
+
+/// To print prettier error messages
+pub mod sourcehint;

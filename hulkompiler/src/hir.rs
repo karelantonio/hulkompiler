@@ -553,12 +553,12 @@ impl TypeChecker {
 
     fn to_expr(&mut self, expr: &crate::ast::Expr) -> TResult<Expr> {
         Ok(match expr {
-            crate::ast::Expr::Num(v) => Expr::Const {
+            crate::ast::Expr::Num(_, v) => Expr::Const {
                 ty: Ty::Num,
                 cons: self.push_const_num(*v),
             },
 
-            crate::ast::Expr::Str(v) => Expr::Const {
+            crate::ast::Expr::Str(_, v) => Expr::Const {
                 ty: Ty::Str,
                 cons: self.push_const_str(&v),
             },
@@ -644,7 +644,7 @@ impl TypeChecker {
                 }
             }
 
-            crate::ast::Expr::BlockExpr(crate::ast::BlockExpr { exprs }) => {
+            crate::ast::Expr::BlockExpr(crate::ast::BlockExpr { exprs, .. }) => {
                 // Map each of these
                 let instrs = exprs
                     .iter()
@@ -657,7 +657,7 @@ impl TypeChecker {
                 }
             }
 
-            crate::ast::Expr::Id(name) => {
+            crate::ast::Expr::Id(_, name) => {
                 let VarId(vid) = self
                     .scope
                     .reverse_vars
