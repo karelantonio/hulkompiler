@@ -15,6 +15,7 @@ pub struct Loc {
 /// A binary operator
 #[derive(Debug)]
 pub enum BinOp {
+    Cat,
     Add,
     Sub,
     Mult,
@@ -29,6 +30,20 @@ pub struct BinOpExpr {
     pub op: BinOp,
     pub left: Box<Expr>,
     pub right: Box<Expr>,
+}
+
+/// An unary operator
+#[derive(Debug)]
+pub enum UnaryOp {
+    Neg, // -2
+}
+
+/// An unary operator expression
+#[derive(Debug)]
+pub struct UnaryOpExpr {
+    pub loc: Loc,
+    pub op: UnaryOp,
+    pub expr: Box<Expr>,
 }
 
 /// A function call expression
@@ -53,6 +68,7 @@ pub enum Expr {
     Id(Loc, String),
     Str(Loc, String),
     BinOpExpr(BinOpExpr),
+    UnaryOpExpr(UnaryOpExpr),
     FunCallExpr(FunCallExpr),
     BlockExpr(BlockExpr),
 }
@@ -66,6 +82,7 @@ impl Expr {
             Expr::BinOpExpr(BinOpExpr { loc, .. }) => loc,
             Expr::FunCallExpr(FunCallExpr { loc, .. }) => loc,
             Expr::BlockExpr(BlockExpr { loc, .. }) => loc,
+            Expr::UnaryOpExpr(UnaryOpExpr { loc, .. }) => loc,
         }
     }
 }
@@ -382,14 +399,12 @@ impl<'a> Parser<'a> {
     }
 
     /// The root of the expression parsing
-    /// <expr> ::= <ident> '(' <expr>,<expr>... ,? ')'
-    ///          | <atom> <binop> <expr>
-    ///          | <expr-block>
+    /// <expr> ::= <cat>
     fn reduce_expr(&mut self) -> PResult<Expr> {
         // Lookahead
         match self.remaining() {
             [Tk::LBrac, ..] => self.reduce_expr_block(),
-            _ => self.reduce_expr_sum(),
+            _ => self.reduce_expr_cat(),
         }
     }
 
@@ -418,8 +433,36 @@ impl<'a> Parser<'a> {
         Ok(Expr::BlockExpr(BlockExpr { loc, exprs: stm }))
     }
 
+    /// Reduce a concatenation
+    /// <cat> ::= <sum> [ '@' <cat> ]
+    fn reduce_expr_cat(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+        let left = self.reduce_expr_sum()?;
+
+        let right = match self.remaining() {
+            [Tk::Cat, ..] => {
+                self.take(); // The @
+                self.reduce_expr_cat()?
+            }
+            _ => return Ok(left),
+        };
+
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+            content: self.text.clone(),
+        };
+
+        Ok(Expr::BinOpExpr(BinOpExpr {
+            loc,
+            op: BinOp::Cat,
+            left: Box::new(left),
+            right: Box::new(right),
+        }))
+    }
+
     /// Reduce a sum of values
-    /// <sum> :: <mult> [ ('+'|'-') <mult> ]
+    /// <sum> ::= <mult> [ ('+'|'-') <mult> ]
     fn reduce_expr_sum(&mut self) -> PResult<Expr> {
         let loc_start = self.addr_start().clone();
         let lhs = self.reduce_expr_mult()?;
@@ -461,7 +504,7 @@ impl<'a> Parser<'a> {
     /// <mult> ::= <factor-or-power> [ ('*'|'/') <mult> ] ...
     fn reduce_expr_mult(&mut self) -> PResult<Expr> {
         let loc_start = self.addr_start().clone();
-        let fst = self.reduce_expr_factor_or_power()?;
+        let fst = self.reduce_expr_neg_factor_or_power()?;
 
         Ok(match self.remaining() {
             [Tk::Star, ..] => {
@@ -494,6 +537,31 @@ impl<'a> Parser<'a> {
             }
             _ => fst,
         })
+    }
+
+    /// Reduce a possibly negated value
+    /// <neg-factor-or-power> ::= [ '-' ] <factor-or-power>
+    fn reduce_expr_neg_factor_or_power(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+        match self.remaining() {
+            [Tk::Minus, ..] => {
+                self.take();
+
+                let expr = self.reduce_expr_factor_or_power()?;
+                let loc = Loc {
+                    start: loc_start,
+                    end: self.prev_addr_end().clone(),
+                    content: self.text.clone(),
+                };
+
+                Ok(Expr::UnaryOpExpr(UnaryOpExpr {
+                    loc,
+                    op: UnaryOp::Neg,
+                    expr: Box::new(expr),
+                }))
+            }
+            _ => self.reduce_expr_factor_or_power(),
+        }
     }
 
     /// Reduce an power expresion or just an atom
@@ -585,6 +653,7 @@ impl<'a> Parser<'a> {
 
                 Ok(sub)
             }
+
             _ => Err(self.unexpected(&[Tk::Num, Tk::Str, Tk::Id, Tk::LPar])),
         }
     }

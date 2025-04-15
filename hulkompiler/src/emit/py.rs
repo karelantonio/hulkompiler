@@ -221,17 +221,36 @@ impl<'a> Emitter<'a> {
                     hir::Op::Div => "/",
                     hir::Op::Mul => "*",
                     hir::Op::Pow => "**",
-                    _ => panic!("Unsupported operator: {op:?}"),
+                    hir::Op::Cat => "+",
                 };
 
                 // Make it work, then make it pretty
+                let lty = left.ty();
+                let rty = right.ty();
                 let left = self.expr_to_py(outp, &left);
                 let right = self.expr_to_py(outp, &right);
 
                 let left = self.instr_to_str(&left);
                 let right = self.instr_to_str(&right);
 
-                Instr::Instr(format!("({left}){opchar}({right})"))
+                match op {
+                    hir::Op::Cat => {
+                        let left = if lty == hir::Ty::Str {
+                            format!("({left})")
+                        } else {
+                            format!("str({left})")
+                        };
+
+                        let right = if rty == hir::Ty::Str {
+                            format!("({right})")
+                        } else {
+                            format!("str({right})")
+                        };
+
+                        Instr::Instr(format!("{left}+{right}"))
+                    }
+                    _ => Instr::Instr(format!("({left}){opchar}({right})")),
+                }
             }
             hir::Expr::Call { fun, ty: _, args } => {
                 let fun = self
@@ -257,9 +276,19 @@ impl<'a> Emitter<'a> {
                 self.expr_to_py(outp, expr)
             }
             hir::Expr::VarRead { ty: _, var } => {
-                let var = self.unit.lookup_var(var).expect("Expect that variable to exist");
+                let var = self
+                    .unit
+                    .lookup_var(var)
+                    .expect("Expect that variable to exist");
                 Instr::Instr(format!("hkv_{}", var.name))
             }
+            hir::Expr::UnaryOp { ty: _, op, expr } => match op {
+                hir::UOp::Neg => {
+                    let expr = self.expr_to_py(outp, expr);
+
+                    Instr::Instr(format!("(-({}))", self.instr_to_str(&expr)))
+                }
+            },
         }
     }
 }

@@ -37,7 +37,7 @@ pub enum Ty {
 }
 
 /// A binary operation
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Op {
     Add,
     Sub,
@@ -54,6 +54,12 @@ impl Op {
             _ => false,
         }
     }
+}
+
+/// Unary operator
+#[derive(Debug)]
+pub enum UOp {
+    Neg,
 }
 
 /// An expression
@@ -86,6 +92,11 @@ pub enum Expr {
         ty: Ty,
         var: VarId,
     },
+    UnaryOp {
+        ty: Ty,
+        op: UOp,
+        expr: Box<Expr>,
+    },
 }
 
 impl Expr {
@@ -97,6 +108,7 @@ impl Expr {
             Self::Block { ty, .. } => ty,
             Self::ImplicitCast { ty, .. } => ty,
             Self::VarRead { ty, .. } => ty,
+            Self::UnaryOp { ty, .. } => ty,
         }
     }
 
@@ -255,8 +267,14 @@ pub enum TypeError {
         loc: LocError,
     },
 
-    #[error("Both expressions must be numbers in order to apply an arithmetic operator")]
+    #[error("Both expressions must be numbers in order to apply an arithmetic operator. Did you mean concatenate '@' ?")]
     ExprMustBeNumbers {
+        #[source]
+        loc: LocError,
+    },
+
+    #[error("Expression must result in a number in order to apply that unary operator")]
+    UnaryExprMustBeNumber {
         #[source]
         loc: LocError,
     },
@@ -412,6 +430,39 @@ impl TypeChecker {
         make(&loc.content, &loc.start, &loc.end)
     }
 
+    /// Check if can apply the given operator to these expressions
+    fn can_apply(&self, op: &Op, left: &Expr, right: &Expr, loc: &Loc) -> TResult<()> {
+        // Check if is arithmetic
+        if op.is_arithmetic() && (left.ty() != Ty::Num || right.ty() != Ty::Num) {
+            return Err(TypeError::ExprMustBeNumbers {
+                loc: self.make_loc_err(loc),
+            });
+        }
+
+        match op {
+            // We can concatenate anything
+            Op::Cat => (),
+            _ => panic!("Dont know how to handle operator: {op:?}"),
+        }
+
+        Ok(())
+    }
+
+    /// Check if the given unary operator can be applied to that expression
+    fn can_apply_unary(&self, op: &UOp, expr: &Expr, loc: &Loc) -> TResult<()> {
+        match op {
+            UOp::Neg => {
+                if expr.ty() != Ty::Num {
+                    return Err(TypeError::UnaryExprMustBeNumber {
+                        loc: self.make_loc_err(loc),
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Transform the given expresion to the given unit
     pub fn transform(ast: &[crate::ast::RootElem]) -> TResult<Unit> {
         // Transform this expr to our expr
@@ -563,13 +614,20 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn to_op(&mut self, op: &crate::ast::BinOp) -> Op {
+    fn to_op(&self, op: &crate::ast::BinOp) -> Op {
         match op {
             crate::ast::BinOp::Add => Op::Add,
             crate::ast::BinOp::Sub => Op::Sub,
             crate::ast::BinOp::Mult => Op::Mul,
             crate::ast::BinOp::Div => Op::Div,
             crate::ast::BinOp::Pwr => Op::Pow,
+            crate::ast::BinOp::Cat => Op::Cat,
+        }
+    }
+
+    fn to_unary_op(&self, op: &crate::ast::UnaryOp) -> UOp {
+        match op {
+            crate::ast::UnaryOp::Neg => UOp::Neg,
         }
     }
 
@@ -622,20 +680,34 @@ impl TypeChecker {
                 let left = self.to_expr(&binop.left)?;
                 let right = self.to_expr(&binop.right)?;
 
-                // If is arithmetic operator
-                if op.is_arithmetic()
-                    && !(matches!(left.ty(), Ty::Num) && matches!(right.ty(), Ty::Num))
-                {
-                    return Err(TypeError::ExprMustBeNumbers {
-                        loc: self.make_loc_err(&binop.loc),
-                    });
-                }
+                self.can_apply(&op, &left, &right, &binop.loc)?;
+
+                let ty = if op.is_arithmetic() {
+                    Ty::Num
+                } else if op == Op::Cat {
+                    Ty::Str
+                } else {
+                    panic!("Unknown type: {op:?}")
+                };
 
                 Expr::BinOp {
-                    ty: Ty::Num,
+                    ty,
                     op,
                     left: left.into(),
                     right: right.into(),
+                }
+            }
+
+            crate::ast::Expr::UnaryOpExpr(crate::ast::UnaryOpExpr { loc, op, expr }) => {
+                let op = self.to_unary_op(&op);
+                let expr = self.to_expr(expr)?;
+
+                self.can_apply_unary(&op, &expr, &loc)?;
+
+                Expr::UnaryOp {
+                    ty: Ty::Num,
+                    op,
+                    expr: Box::new(expr),
                 }
             }
 
