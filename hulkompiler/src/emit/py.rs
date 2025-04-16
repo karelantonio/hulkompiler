@@ -151,6 +151,7 @@ impl<'a> PyFunBuilder<'a> {
             hir::Expr::UnaryOp { ty: _, op, expr } => {
                 let opch = match op {
                     hir::UOp::Neg => "-",
+                    hir::UOp::Not => "not",
                 };
                 let expr = self.expr_to_str(expr);
 
@@ -195,7 +196,15 @@ impl<'a> PyFunBuilder<'a> {
                     hir::Op::Mul => "*",
                     hir::Op::Div => "/",
                     hir::Op::Pow => "**",
-                    _ => panic!("Unknown operator: {op:?}"), //Unreachable
+                    hir::Op::Le => "<=",
+                    hir::Op::Lt => "<",
+                    hir::Op::Ge => ">=",
+                    hir::Op::Gt => ">",
+                    hir::Op::Eq => "==",
+                    hir::Op::Neq => "!=",
+                    hir::Op::And => "and",
+                    hir::Op::Or => "or",
+                    hir::Op::Cat => unreachable!(),
                 };
 
                 format!("({lrepr}){opch}({rrepr})")

@@ -14,7 +14,7 @@ pub enum LexError {
 }
 
 /// The tokens
-#[derive(Clone, Debug, PartialEq, Logos)]
+#[derive(Clone, Copy, Debug, PartialEq, Logos)]
 #[logos(skip r"[ \t\r\f]+")]
 pub enum Tk {
     // New line (ignored later)
@@ -127,13 +127,13 @@ pub enum Tk {
     Num,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Addr {
     pub line: usize,
     pub col: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct LocTk<'a> {
     pub start: Addr,
     pub end: Addr,

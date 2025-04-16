@@ -45,12 +45,42 @@ pub enum Op {
     Div,
     Pow,
     Cat,
+    Le,
+    Ge,
+    Lt,
+    Gt,
+    Eq,
+    Neq,
+    And,
+    Or,
 }
 
 impl Op {
     fn is_arithmetic(&self) -> bool {
         match self {
-            Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Pow => true,
+            Self::Add
+            | Self::Sub
+            | Self::Mul
+            | Self::Div
+            | Self::Pow
+            | Self::Le
+            | Self::Ge
+            | Self::Lt
+            | Self::Gt => true,
+            _ => false,
+        }
+    }
+
+    fn is_comparison(&self) -> bool {
+        match self {
+            Self::Le | Self::Lt | Self::Ge | Self::Gt | Self::Eq | Self::Neq => true,
+            _ => false,
+        }
+    }
+
+    fn is_logic(&self) -> bool {
+        match self {
+            Self::And | Self::Or => true,
             _ => false,
         }
     }
@@ -59,7 +89,8 @@ impl Op {
 /// Unary operator
 #[derive(Debug)]
 pub enum UOp {
-    Neg,
+    Neg, // additive inverse
+    Not, // logical negation
 }
 
 /// An expression
@@ -133,7 +164,9 @@ pub struct FunId(usize);
 pub struct VarId(usize);
 
 impl VarId {
-    pub(crate) fn id(&self) -> usize { self.0 }
+    pub(crate) fn id(&self) -> usize {
+        self.0
+    }
 }
 
 /// A variable kind
@@ -367,6 +400,12 @@ pub enum TypeError {
         #[source]
         loc: LocError,
     },
+
+    #[error("Logic operators can only be applied to boolean expressions")]
+    LogicOperOnNotBoolean {
+        #[source]
+        loc: LocError,
+    },
 }
 
 type TResult<T> = Result<T, TypeError>;
@@ -402,6 +441,23 @@ impl TypeChecker {
             value: ConstValue::Str(val.into()),
         });
         ConstId(id)
+    }
+
+    /// The only two possible boolean constants
+    fn push_boolean_constants(&mut self) {
+        // This should be the first constants to be added, in order to access them easy
+        let id = self.constpool.len();
+        if id != 0 {
+            panic!("You should add the boolean constants first!");
+        }
+        self.constpool.push(Const {
+            id: ConstId(0),
+            value: ConstValue::Bool(false),
+        });
+        self.constpool.push(Const {
+            id: ConstId(1),
+            value: ConstValue::Bool(true),
+        });
     }
 
     fn add_stub_fun(&mut self, name: &str, ret: Ty, args: &[FunArg], std: bool) -> usize {
@@ -456,6 +512,10 @@ impl TypeChecker {
         }
     }
 
+    fn get_boolean_const(&mut self, val: bool) -> ConstId {
+        ConstId(if val { 1 } else { 0 })
+    }
+
     fn make_loc_err(&self, loc: &Loc) -> LocError {
         make(&loc.content, &loc.start, &loc.end)
     }
@@ -482,6 +542,14 @@ impl TypeChecker {
                     });
                 }
             }
+
+            UOp::Not => {
+                if expr.ty() != Ty::Bool {
+                    return Err(TypeError::LogicOperOnNotBoolean {
+                        loc: self.make_loc_err(loc),
+                    });
+                }
+            }
         }
 
         Ok(())
@@ -491,6 +559,7 @@ impl TypeChecker {
     pub fn transform(ast: &[crate::ast::RootElem]) -> TResult<Unit> {
         // Transform this expr to our expr
         let mut tr = Self::default();
+        tr.push_boolean_constants();
 
         // Add the Standard library functions
         tr.add_stub_fun(
@@ -655,12 +724,21 @@ impl TypeChecker {
             crate::ast::BinOp::Div => Op::Div,
             crate::ast::BinOp::Pwr => Op::Pow,
             crate::ast::BinOp::Cat => Op::Cat,
+            crate::ast::BinOp::Le => Op::Le,
+            crate::ast::BinOp::Ge => Op::Ge,
+            crate::ast::BinOp::Lt => Op::Lt,
+            crate::ast::BinOp::Gt => Op::Gt,
+            crate::ast::BinOp::Eq => Op::Eq,
+            crate::ast::BinOp::Neq => Op::Neq,
+            crate::ast::BinOp::And => Op::And,
+            crate::ast::BinOp::Or => Op::Or,
         }
     }
 
     fn to_unary_op(&self, op: &crate::ast::UnaryOp) -> UOp {
         match op {
             crate::ast::UnaryOp::Neg => UOp::Neg,
+            crate::ast::UnaryOp::Not => UOp::Not,
         }
     }
 
@@ -708,6 +786,11 @@ impl TypeChecker {
                 cons: self.push_const_str(&v),
             },
 
+            crate::ast::Expr::Boolean(_, v) => Expr::Const {
+                ty: Ty::Bool,
+                cons: self.get_boolean_const(*v),
+            },
+
             crate::ast::Expr::BinOpExpr(binop) => {
                 let op = self.to_op(&binop.op);
                 let left = self.to_expr(&binop.left)?;
@@ -719,8 +802,10 @@ impl TypeChecker {
                     Ty::Num
                 } else if op == Op::Cat {
                     Ty::Str
+                } else if op.is_comparison() || op.is_logic() {
+                    Ty::Bool
                 } else {
-                    panic!("Unknown type: {op:?}")
+                    panic!("Unknown operator: {op:?}")
                 };
 
                 Expr::BinOp {

@@ -16,11 +16,25 @@ pub struct Loc {
 #[derive(Debug)]
 pub enum BinOp {
     Cat,
+
+    // Arithmetic
     Add,
     Sub,
     Mult,
     Div,
     Pwr,
+
+    // Comparation
+    Eq,
+    Neq,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+
+    // Logic
+    And,
+    Or,
 }
 
 /// Add two values
@@ -36,6 +50,7 @@ pub struct BinOpExpr {
 #[derive(Debug)]
 pub enum UnaryOp {
     Neg, // -2
+    Not, // !true
 }
 
 /// An unary operator expression
@@ -77,6 +92,7 @@ pub enum Expr {
     Num(Loc, f64),
     Id(Loc, String),
     Str(Loc, String),
+    Boolean(Loc, bool),
     BinOpExpr(BinOpExpr),
     UnaryOpExpr(UnaryOpExpr),
     FunCallExpr(FunCallExpr),
@@ -90,6 +106,7 @@ impl Expr {
             Expr::Num(loc, _) => loc,
             Expr::Id(loc, _) => loc,
             Expr::Str(loc, _) => loc,
+            Expr::Boolean(loc, _) => loc,
             Expr::BinOpExpr(BinOpExpr { loc, .. }) => loc,
             Expr::FunCallExpr(FunCallExpr { loc, .. }) => loc,
             Expr::BlockExpr(BlockExpr { loc, .. }) => loc,
@@ -387,11 +404,6 @@ impl<'a> Parser<'a> {
     /// A statement (?) is an expresion ended with a semicolon ;
     /// <statement> ::= <expr> ';'
     fn reduce_statement(&mut self) -> PResult<Expr> {
-        // Check if is a conditional or a loop
-        /*match self.remaining() {
-            [Tk::If]
-        }*/
-
         let was_block = matches!(self.remaining(), [Tk::LBrac, ..]);
 
         let expr = self.reduce_expr()?;
@@ -414,10 +426,7 @@ impl<'a> Parser<'a> {
     /// <expr> ::= <cat>
     fn reduce_expr(&mut self) -> PResult<Expr> {
         // Lookahead
-        match self.remaining() {
-            [Tk::LBrac, ..] => self.reduce_expr_block(),
-            _ => self.reduce_expr_cat(),
-        }
+        self.reduce_expr_log_or()
     }
 
     /// Reduce an expression block
@@ -443,6 +452,123 @@ impl<'a> Parser<'a> {
             end: self.prev_addr_end().clone(),
         };
         Ok(Expr::BlockExpr(BlockExpr { loc, exprs: stm }))
+    }
+
+    /// Reduce a logical OR (disjunction)
+    /// <or> ::= <and> [ | <or> ]
+    fn reduce_expr_log_or(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+
+        let lhs = self.reduce_expr_log_and()?;
+
+        match self.remaining() {
+            [Tk::Pipe, ..] => {
+                self.take();
+            }
+            _ => return Ok(lhs),
+        }
+
+        let rhs = self.reduce_expr_log_or()?;
+
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+            content: self.text.clone(),
+        };
+        Ok(Expr::BinOpExpr(BinOpExpr {
+            loc,
+            op: BinOp::Or,
+            left: Box::new(lhs),
+            right: Box::new(rhs),
+        }))
+    }
+
+    /// Reduce a logical AND (conjunction)
+    /// <and> ::= <neg> [ & <and> ]
+    fn reduce_expr_log_and(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+
+        let lhs = self.reduce_expr_log_neg()?;
+
+        match self.remaining() {
+            [Tk::Amp, ..] => {
+                self.take();
+            }
+            _ => return Ok(lhs),
+        }
+
+        let rhs = self.reduce_expr_log_and()?;
+
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+            content: self.text.clone(),
+        };
+
+        Ok(Expr::BinOpExpr(BinOpExpr {
+            loc,
+            op: BinOp::And,
+            left: Box::new(lhs),
+            right: Box::new(rhs),
+        }))
+    }
+
+    /// Reduce a logical negation
+    /// <neg> ::= [ ! ] <neg>
+    fn reduce_expr_log_neg(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+
+        match self.remaining() {
+            [Tk::Excl, ..] => {
+                self.take();
+            }
+            _ => return self.reduce_expr_comp(),
+        }
+
+        let val = self.reduce_expr_log_neg()?;
+
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+            content: self.text.clone(),
+        };
+
+        Ok(Expr::UnaryOpExpr(UnaryOpExpr {
+            loc,
+            op: UnaryOp::Not,
+            expr: Box::new(val),
+        }))
+    }
+
+    /// Reduce a comparison
+    /// <comp> ::= <cat> [ <= | >= | < | > | == | != ] <cat>
+    fn reduce_expr_comp(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+        let lhs = self.reduce_expr_cat()?;
+        let op = match self.remaining() {
+            [Tk::Le, ..] => BinOp::Le,
+            [Tk::Ge, ..] => BinOp::Ge,
+            [Tk::Lt, ..] => BinOp::Lt,
+            [Tk::Gt, ..] => BinOp::Gt,
+            [Tk::Eq, ..] => BinOp::Eq,
+            [Tk::Neq, ..] => BinOp::Neq,
+            _ => return Ok(lhs),
+        };
+        self.take();
+
+        let rhs = self.reduce_expr_cat()?;
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+            content: self.text.clone(),
+        };
+
+        Ok(Expr::BinOpExpr(BinOpExpr {
+            loc,
+            op,
+            left: Box::new(lhs),
+            right: Box::new(rhs),
+        }))
     }
 
     /// Reduce a concatenation
@@ -602,20 +728,44 @@ impl<'a> Parser<'a> {
     }
 
     /// Reduce an atom
-    /// <atom> ::= <number> | <ident> | <string> | '(' <expr> ')' | <fn-call>
+    /// <atom> ::= <number> | <ident> | <string> | '(' <expr> ')' | <fn-call> | true | false
     fn reduce_expr_atom(&mut self) -> PResult<Expr> {
         let loc_start = self.addr_start().clone();
         match self.remaining() {
+            // Boolean true
+            [Tk::True, ..] => {
+                let loc_end = self.addr_end();
+                let loc = Loc {
+                    start: loc_start,
+                    end: loc_end.clone(),
+                    content: self.text.clone(),
+                };
+                self.take();
+                Ok(Expr::Boolean(loc, true))
+            }
+
+            // Boolean false
+            [Tk::False, ..] => {
+                let loc_end = self.addr_end();
+                let loc = Loc {
+                    start: loc_start,
+                    end: loc_end.clone(),
+                    content: self.text.clone(),
+                };
+                self.take();
+                Ok(Expr::Boolean(loc, false))
+            }
+
             // Constant number
             [Tk::Num, ..] => {
                 // Found number, advance and return gracefully
                 let loc_end = self.addr_end().clone();
+                let sli = self.take();
                 let loc = Loc {
                     content: self.text.clone(),
-                    start: loc_start.clone(),
-                    end: loc_end.clone(),
+                    start: loc_start,
+                    end: loc_end,
                 };
-                let sli = self.take();
 
                 Ok(Expr::Num(
                     loc,
@@ -631,7 +781,7 @@ impl<'a> Parser<'a> {
             [Tk::Str, ..] => {
                 let loc = Loc {
                     content: self.text.clone(),
-                    start: loc_start.clone(),
+                    start: loc_start,
                     end: self.addr_end().clone(),
                 };
                 let stri = self.take();
@@ -646,7 +796,7 @@ impl<'a> Parser<'a> {
                 // Pop the identifier
                 let loc = Loc {
                     content: self.text.clone(),
-                    start: loc_start.clone(),
+                    start: loc_start,
                     end: self.addr_end().clone(),
                 };
                 let id = self.take();
@@ -665,6 +815,9 @@ impl<'a> Parser<'a> {
 
                 Ok(sub)
             }
+
+            // An expression block
+            [Tk::LBrac, ..] => self.reduce_expr_block(),
 
             // A variable declaration
             [Tk::Let, ..] => self.reduce_expr_var_decl(),
