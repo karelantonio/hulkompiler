@@ -31,6 +31,12 @@ pub enum Tk {
     #[token("in")]
     In,
 
+    #[token("true")]
+    True,
+
+    #[token("false")]
+    False,
+
     // Operators
     #[token("+")]
     Add,
@@ -49,6 +55,35 @@ pub enum Tk {
 
     #[token("@")]
     Cat,
+
+    // Comparison symbols
+    #[token("==")]
+    Eq,
+
+    #[token("!=")]
+    Neq,
+
+    #[token("<=")]
+    Le,
+
+    #[token(">=")]
+    Ge,
+
+    #[token("<")]
+    Lt,
+
+    #[token(">")]
+    Gt,
+
+    // Logic symbols
+    #[token("&")]
+    Amp,
+
+    #[token("|")]
+    Pipe,
+
+    #[token("!")]
+    Excl,
 
     // Other symbols
     #[token("=>")]
