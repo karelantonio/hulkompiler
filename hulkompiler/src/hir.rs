@@ -92,6 +92,12 @@ pub enum Expr {
         ty: Ty,
         var: VarId,
     },
+    VarDecl {
+        ty: Ty,
+        var: VarId,
+        expr: Box<Expr>,
+        scope: Box<Expr>,
+    },
     UnaryOp {
         ty: Ty,
         op: UOp,
@@ -109,6 +115,7 @@ impl Expr {
             Self::ImplicitCast { ty, .. } => ty,
             Self::VarRead { ty, .. } => ty,
             Self::UnaryOp { ty, .. } => ty,
+            Self::VarDecl { ty, .. } => ty,
         }
     }
 
@@ -334,6 +341,15 @@ pub enum TypeError {
     FnRetMismatch {
         ret: String,
         bod: String,
+        #[source]
+        loc: LocError,
+    },
+
+    #[error("The result of the variable {name}'s expression does not result in a type conforming the declared type ({exprty:?} cannot be interpreted as {declty:?})")]
+    VarExprNotConformsTy {
+        name: String,
+        declty: Ty,
+        exprty: Ty,
         #[source]
         loc: LocError,
     },
@@ -805,6 +821,61 @@ impl TypeChecker {
                 Expr::VarRead {
                     ty: var.ty,
                     var: var.id,
+                }
+            }
+
+            crate::ast::Expr::VarDeclExpr(crate::ast::VarDeclExpr {
+                expr,
+                scope,
+                name,
+                declty,
+                loc,
+            }) => {
+                // First analyze the expression
+                let expr = self.to_expr(expr)?;
+
+                // Now we infer if required
+                let ty = match declty {
+                    Some(ty) => {
+                        let declty = self.str_to_ty(&ty).ok_or(TypeError::UnknownTy {
+                            name: ty.to_string(),
+                            loc: self.make_loc_err(&loc),
+                        })?;
+
+                        if !self.ty_conforms(&expr.ty(), &declty) {
+                            return Err(TypeError::VarExprNotConformsTy {
+                                name: name.into(),
+                                declty,
+                                exprty: expr.ty().clone(),
+                                loc: self.make_loc_err(loc),
+                            });
+                        }
+
+                        declty
+                    }
+                    _ => expr.ty(),
+                };
+
+                // Declare the var
+                let var = self.scope.push_var(&name, ty);
+
+                let expr = if ty != expr.ty() {
+                    Expr::ImplicitCast {
+                        ty,
+                        expr: Box::new(expr),
+                    }
+                } else {
+                    expr
+                };
+
+                // The body
+                let scope = self.to_expr(scope)?;
+
+                Expr::VarDecl {
+                    ty,
+                    var,
+                    expr: Box::new(expr),
+                    scope: Box::new(scope),
                 }
             }
         })

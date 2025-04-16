@@ -54,6 +54,12 @@ pub enum Tk {
     #[token("=>")]
     RArrow,
 
+    #[token(":=")]
+    Reassign,
+
+    #[token("=")]
+    Assign,
+
     #[token("(")]
     LPar,
 

@@ -61,6 +61,16 @@ pub struct BlockExpr {
     pub exprs: Vec<Expr>,
 }
 
+/// A Variable declaration
+#[derive(Debug)]
+pub struct VarDeclExpr {
+    pub loc: Loc,
+    pub name: String,
+    pub declty: Option<String>,
+    pub expr: Box<Expr>,
+    pub scope: Box<Expr>,
+}
+
 // An expression
 #[derive(Debug)]
 pub enum Expr {
@@ -71,6 +81,7 @@ pub enum Expr {
     UnaryOpExpr(UnaryOpExpr),
     FunCallExpr(FunCallExpr),
     BlockExpr(BlockExpr),
+    VarDeclExpr(VarDeclExpr),
 }
 
 impl Expr {
@@ -83,6 +94,7 @@ impl Expr {
             Expr::FunCallExpr(FunCallExpr { loc, .. }) => loc,
             Expr::BlockExpr(BlockExpr { loc, .. }) => loc,
             Expr::UnaryOpExpr(UnaryOpExpr { loc, .. }) => loc,
+            Expr::VarDeclExpr(VarDeclExpr { loc, .. }) => loc,
         }
     }
 }
@@ -654,11 +666,94 @@ impl<'a> Parser<'a> {
                 Ok(sub)
             }
 
+            // A variable declaration
+            [Tk::Let, ..] => self.reduce_expr_var_decl(),
+
             _ => Err(self.unexpected(&[Tk::Num, Tk::Str, Tk::Id, Tk::LPar])),
         }
     }
 
+    /// Reduce a variable(s) declaration
+    /// <var-decl> ::= LET [ <var-bind> , ... ] IN <expr>
+    fn reduce_expr_var_decl(&mut self) -> PResult<Expr> {
+        // Let
+        match self.remaining() {
+            [Tk::Let, ..] => {
+                self.take();
+            }
+            _ => return Err(self.unexpected(&[Tk::Let])),
+        }
+
+        // Get the bindings
+        self.reduce_expr_var_decl_bind_chain()
+    }
+
+    /// Reduce the actual elements in the chain
+    fn reduce_expr_var_decl_bind_chain(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+
+        let name = match self.remaining() {
+            [Tk::Id, ..] => self.take().to_string(),
+            _ => return Err(self.unexpected(&[Tk::Id])),
+        };
+
+        // Maybe type
+        let typ = match self.remaining() {
+            [Tk::Colon, ..] => {
+                self.take();
+
+                match self.remaining() {
+                    [Tk::Id, ..] => Some(self.take().to_string()),
+                    _ => return Err(self.unexpected(&[Tk::Id])),
+                }
+            }
+            _ => None,
+        };
+        // just consider the declaration part, not the expression one
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+            content: self.text.clone(),
+        };
+
+        // Expect =
+        match self.remaining() {
+            [Tk::Assign, ..] => {
+                self.take();
+            }
+            _ => return Err(self.unexpected(&[Tk::Assign])),
+        }
+
+        // Expect an expression
+        let expr = self.reduce_expr()?;
+
+        // What to do next
+        let chld = match self.remaining() {
+            [Tk::In, ..] => {
+                // Another expression
+                self.take();
+                self.reduce_expr()?
+            }
+            [Tk::Comma, ..] => {
+                // Another binding
+                self.take();
+                self.reduce_expr_var_decl_bind_chain()?
+            }
+            _ => return Err(self.unexpected(&[Tk::In, Tk::Comma])),
+        };
+
+        // Ok
+        Ok(Expr::VarDeclExpr(VarDeclExpr {
+            loc,
+            name,
+            declty: typ,
+            expr: Box::new(expr),
+            scope: Box::new(chld),
+        }))
+    }
+
     /// Reduce a function call
+    /// <fn-call> ::=
     fn reduce_expr_fn_call(&mut self) -> PResult<Expr> {
         let loc_start = self.addr_start().clone();
 

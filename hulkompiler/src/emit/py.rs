@@ -69,7 +69,7 @@ impl PyFile {
     /// Dump multiple instructions
     pub fn dump_instrs(&self, depth: usize, isfun: bool, instrs: &[Instr], out: &mut Vec<String>) {
         let len = instrs.len();
-        if len==0 {
+        if len == 0 {
             self.dump_instr(depth, true, &Instr::Instr("object()".into()), out);
         }
         for (i, instr) in instrs.iter().enumerate() {
@@ -295,6 +295,15 @@ impl<'a> Emitter<'a> {
                     Instr::Instr(format!("(-({}))", self.instr_to_str(&expr)))
                 }
             },
+
+            hir::Expr::VarDecl {
+                ty: _,
+                var,
+                expr,
+                scope,
+            } => {
+                unimplemented!()
+            }
         }
     }
 }
