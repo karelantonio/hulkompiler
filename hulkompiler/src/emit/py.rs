@@ -152,7 +152,6 @@ impl<'a> PyFunBuilder<'a> {
                 let opch = match op {
                     hir::UOp::Neg => "-",
                 };
-
                 let expr = self.expr_to_str(expr);
 
                 format!("{opch}({expr})")
@@ -202,7 +201,30 @@ impl<'a> PyFunBuilder<'a> {
                 format!("({lrepr}){opch}({rrepr})")
             }
 
-            _ => panic!("Unknown expr: {expr:?}"),
+            // A group of expressions
+            hir::Expr::Block { ty: _, insts } => {
+                let res = insts
+                    .iter()
+                    .map(|e| self.expr_to_str(e))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!("[{res}][-1]")
+            }
+
+            // A variable declaration
+            hir::Expr::VarDecl {
+                ty: _,
+                var,
+                expr,
+                scope,
+            } => {
+                let assi = self.expr_to_str(expr);
+                let sco = self.expr_to_str(scope);
+
+                let name = self.lookup_var(var);
+
+                format!("[{name}:={assi},{sco}][1]")
+            }
         }
     }
 
@@ -265,9 +287,9 @@ impl Emitter {
             }
 
             for (i, line) in fun.code.iter().enumerate() {
-                if i==fun.code.len()-1 {
+                if i == fun.code.len() - 1 {
                     outp.push(format!(" return {line}"));
-                }else{
+                } else {
                     outp.push(format!(" {line}"));
                 }
             }
