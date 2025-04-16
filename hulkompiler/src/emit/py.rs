@@ -2,22 +2,6 @@
 
 use crate::hir;
 
-pub enum Instr {
-    Instr(String),
-}
-
-pub struct PyFunc {
-    name: String,
-    args: Vec<String>,
-    ret: String,
-    code: Vec<Instr>,
-}
-
-pub struct PyFile {
-    funcs: Vec<PyFunc>,
-    glob: Vec<Instr>,
-}
-
 const STD: &[&str] = &[
     "# Standard library of HULK",
     "from math import sin, cos, sqrt, exp, log, pi, floor",
@@ -36,274 +20,261 @@ const STD: &[&str] = &[
     "# End of HULK standard library",
 ];
 
-impl PyFile {
-    /// Dump this as a python file
-    pub fn dump(&self) -> String {
-        let mut res = STD.iter().map(|e| e.to_string()).collect::<Vec<_>>();
-        // First the functions
-        for fun in self.funcs.iter() {
-            self.dump_fun(&fun, &mut res);
-        }
-        self.dump_instrs(0, false, self.glob.as_slice(), &mut res);
-
-        res.join("\n")
-    }
-
-    /// Make the left spacing
-    pub fn make_shift(&self, len: usize) -> String {
-        let chrs = vec![' ' as u8; len];
-        String::from_utf8(chrs).expect("This should be valid utf-8")
-    }
-
-    /// Dump a function
-    pub fn dump_fun(&self, fun: &PyFunc, lines: &mut Vec<String>) {
-        lines.push(format!(
-            "def {}({}) -> {}:",
-            fun.name,
-            fun.args.join(","),
-            fun.ret
-        ));
-        self.dump_instrs(1, true, &fun.code, lines);
-    }
-
-    /// Dump multiple instructions
-    pub fn dump_instrs(&self, depth: usize, isfun: bool, instrs: &[Instr], out: &mut Vec<String>) {
-        let len = instrs.len();
-        if len == 0 {
-            self.dump_instr(depth, true, &Instr::Instr("object()".into()), out);
-        }
-        for (i, instr) in instrs.iter().enumerate() {
-            self.dump_instr(depth, isfun && i == len - 1, instr, out);
-        }
-    }
-
-    /// Dump instruction
-    pub fn dump_instr(&self, depth: usize, isret: bool, instr: &Instr, out: &mut Vec<String>) {
-        let shift = self.make_shift(depth);
-        match instr {
-            Instr::Instr(instr) => out.push(format!(
-                "{shift}{}{instr}",
-                if isret { "return " } else { "" }
-            )),
-        }
+/// Convert a type to string
+fn ty_to_str(ty: &hir::Ty) -> &str {
+    match ty {
+        hir::Ty::Obj => "object",
+        hir::Ty::Str => "str",
+        hir::Ty::Num => "float",
+        hir::Ty::Bool => "bool",
     }
 }
 
-pub struct Emitter<'a> {
+struct PyFun {
+    name: String,
+    ret: String,
+    params: Vec<(String, String)>,
+    vars: Vec<usize>,
+    code: Vec<String>,
+}
+
+struct PyFunBuilder<'a> {
+    pf: PyFun,
     unit: &'a hir::Unit,
-    fnnum: usize,
+    file: &'a mut PyFileBuilder,
 }
 
-impl<'a> Emitter<'a> {
-    pub fn emit(unit: &'a hir::Unit) -> String {
-        Self { unit, fnnum: 0 }.generate()
+impl<'a> PyFunBuilder<'a> {
+    fn alloc_var(&mut self, vid: &hir::VarId) -> String {
+        self.pf.vars.push(vid.id());
+        format!("hks_{}", vid.id())
     }
 
-    fn generate(&mut self) -> String {
-        // The output
-        let mut file = PyFile {
-            funcs: vec![],
-            glob: vec![Instr::Instr("pass".into())],
+    fn lookup_var(&mut self, vid: &hir::VarId) -> String {
+        format!("hks_{}", vid.id())
+    }
+
+    /// The program entry point
+    fn build_entry(unit: &'a hir::Unit, file: &'a mut PyFileBuilder, expr: &hir::Expr) {
+        let pf = PyFun {
+            name: "main".into(),
+            ret: "None".into(),
+            params: vec![],
+            vars: vec![],
+            code: vec![],
         };
-
-        // The functions
-        for fun in self.unit.funpool.iter() {
-            self.fun_to_py(&mut file, fun);
-        }
-
-        // The global expression
-        file.glob = vec![self.expr_to_py(&mut file, &self.unit.expr)];
-
-        file.dump()
+        let mut slf = Self { pf, unit, file };
+        slf.write_expr(expr);
+        slf.file.funcs.push(slf.pf);
     }
 
-    /// Convert our types to python types
-    fn ty_to_py(&mut self, ty: &hir::Ty) -> &'static str {
-        match ty {
-            hir::Ty::Obj => "object",
-            hir::Ty::Str => "str",
-            hir::Ty::Num => "float",
-            hir::Ty::Bool => "bool",
-        }
-    }
-
-    /// Generate a new function name
-    fn make_function_name(&mut self) -> String {
-        self.fnnum += 1;
-        format!("_{:06}", self.fnnum)
-    }
-
-    /// Convert the given constant to a string
-    fn const_val_to_str(&self, ct: &hir::Const) -> String {
-        match &ct.value {
-            hir::ConstValue::Num(v) => format!("{v}"),
-            hir::ConstValue::Str(v) => format!("\"{v}\""),
-            hir::ConstValue::Bool(v) => if *v { "True" } else { "False" }.into(),
-        }
-    }
-
-    /// Export a function
-    fn fun_to_py(&mut self, outp: &mut PyFile, fun: &hir::Fun) {
-        let args = fun
-            .args
-            .iter()
-            .map(|e| format!("hkv_{}:{}", e.name, self.ty_to_py(&e.ty)))
-            .collect::<Vec<_>>();
-        let ret = self.ty_to_py(&fun.ty);
-
-        let code = match &fun.body {
-            hir::FunBody::Std => {
-                return; // This function is implemented on top of the file
-            }
-            hir::FunBody::Expr(hir::Expr::Block { insts, .. }) => {
-                insts.iter().map(|e| self.expr_to_py(outp, e)).collect()
-            }
-            hir::FunBody::Expr(e) => vec![self.expr_to_py(outp, &e)],
-            e => panic!("Dont know how to proceed (known body type: {:?})", e),
-        };
-
-        let fun = PyFunc {
+    /// Build a function
+    fn build(unit: &'a hir::Unit, file: &'a mut PyFileBuilder, fun: &hir::Fun) {
+        let pf = PyFun {
             name: format!("hk_{}", fun.name),
-            args,
-            ret: ret.into(),
-            code,
+            ret: ty_to_str(&fun.ty).into(),
+            params: fun
+                .args
+                .iter()
+                .map(|arg| (format!("hkp_{}", arg.name), ty_to_str(&arg.ty).into()))
+                .collect(),
+            vars: vec![],
+            code: vec![],
         };
 
-        outp.funcs.push(fun);
+        Self::build_pyfun(unit, file, pf, &fun.body)
     }
 
-    /// Export a block as a function, return its name
-    fn block_as_py_fun(&mut self, outp: &mut PyFile, expr: &hir::Expr) -> String {
-        let name = self.make_function_name();
+    /// Build a pyfunction
+    fn build_pyfun(
+        unit: &'a hir::Unit,
+        file: &'a mut PyFileBuilder,
+        pf: PyFun,
+        body: &hir::FunBody,
+    ) {
+        let mut slf = Self { pf, unit, file };
 
-        // Build the code
-        let code = match expr {
-            hir::Expr::Block { ty: _, insts } => {
-                insts.iter().map(|e| self.expr_to_py(outp, e)).collect()
-            }
-            a => vec![self.expr_to_py(outp, a)],
-        };
-
-        // Build a function
-        let fun = PyFunc {
-            name: name.clone(),
-            args: vec![],
-            ret: self.ty_to_py(&expr.ty()).into(),
-            code,
-        };
-
-        outp.funcs.push(fun);
-
-        name
-    }
-
-    /// Convert an instruction to a string
-    fn instr_to_str(&mut self, inst: &Instr) -> String {
-        match inst {
-            Instr::Instr(v) => v.clone(),
+        match body {
+            hir::FunBody::Expr(e) => slf.write_expr(&e),
+            hir::FunBody::Std => slf.pf.code.push("pass #Defined in STD".into()),
+            hir::FunBody::Native => slf.pf.code.push("pass #Native".into()),
         }
+
+        slf.file.funcs.push(slf.pf);
     }
 
-    /// Convert an expresion to python, without indentation
-    fn expr_to_py(&mut self, outp: &mut PyFile, expr: &hir::Expr) -> Instr {
+    fn expr_to_str(&mut self, expr: &hir::Expr) -> String {
         match expr {
+            // Ignore, python makes it easy
+            hir::Expr::ImplicitCast { ty: _, expr } => self.expr_to_str(expr),
+
+            // A constant
             hir::Expr::Const { cons, ty: _ } => {
-                // Just get the value, if it is a string
-                let val = self
+                // lookup the const in the unit:
+                let cons = self
                     .unit
-                    .lookup_const(cons)
-                    .expect("Const expected to be inside Unit");
-                Instr::Instr(self.const_val_to_str(&val))
+                    .lookup_const(&cons)
+                    .expect("Constant did not exist, program is in a bad state.");
+                match &cons.value {
+                    hir::ConstValue::Num(nu) => format!("{nu}"),
+                    hir::ConstValue::Bool(bo) => if *bo { "True" } else { "False" }.into(),
+                    hir::ConstValue::Str(s) => format!("\"{s}\""),
+                }
             }
+
+            // Access a variable
+            hir::Expr::VarRead { ty: _, var } => {
+                let var = self
+                    .unit
+                    .lookup_var(&var)
+                    .expect("Variable did not exist, program is in a bad state.");
+                match &var.kind {
+                    hir::VarKind::Local => self.lookup_var(&var.id),
+                    hir::VarKind::Global => format!("hkv_{}", var.name),
+                    hir::VarKind::Param => format!("hkp_{}", var.name),
+                }
+            }
+
+            // A function call
+            hir::Expr::Call { fun, ty: _, args } => {
+                // First lookup
+                let fun = self
+                    .unit
+                    .lookup_fun(&fun)
+                    .expect("Function did not exist, program is in a bad state");
+                let args: Vec<_> = args.iter().map(|a| self.expr_to_str(a)).collect();
+
+                format!("hk_{}({})", fun.name, args.join(","))
+            }
+
+            // An unary expression
+            hir::Expr::UnaryOp { ty: _, op, expr } => {
+                let opch = match op {
+                    hir::UOp::Neg => "-",
+                };
+
+                let expr = self.expr_to_str(expr);
+
+                format!("{opch}({expr})")
+            }
+
+            // A binary expression (Concat)
+            hir::Expr::BinOp {
+                op: hir::Op::Cat,
+                ty: _,
+                left,
+                right,
+            } => {
+                let lrepr = self.expr_to_str(left);
+                let rrepr = self.expr_to_str(right);
+                let left = if left.ty() != hir::Ty::Str {
+                    format!("str({lrepr})")
+                } else {
+                    format!("({lrepr})")
+                };
+                let right = if right.ty() != hir::Ty::Str {
+                    format!("str({rrepr})")
+                } else {
+                    format!("({rrepr})")
+                };
+
+                format!("{left}+{right}")
+            }
+
+            // A binary expression
             hir::Expr::BinOp {
                 op,
                 ty: _,
                 left,
                 right,
             } => {
-                let opchar = match op {
+                let lrepr = self.expr_to_str(left);
+                let rrepr = self.expr_to_str(right);
+                let opch = match op {
                     hir::Op::Add => "+",
                     hir::Op::Sub => "-",
-                    hir::Op::Div => "/",
                     hir::Op::Mul => "*",
+                    hir::Op::Div => "/",
                     hir::Op::Pow => "**",
-                    hir::Op::Cat => "+",
+                    _ => panic!("Unknown operator: {op:?}"), //Unreachable
                 };
 
-                // Make it work, then make it pretty
-                let lty = left.ty();
-                let rty = right.ty();
-                let left = self.expr_to_py(outp, &left);
-                let right = self.expr_to_py(outp, &right);
+                format!("({lrepr}){opch}({rrepr})")
+            }
 
-                let left = self.instr_to_str(&left);
-                let right = self.instr_to_str(&right);
+            _ => panic!("Unknown expr: {expr:?}"),
+        }
+    }
 
-                match op {
-                    hir::Op::Cat => {
-                        let left = if lty == hir::Ty::Str {
-                            format!("({left})")
-                        } else {
-                            format!("str({left})")
-                        };
-
-                        let right = if rty == hir::Ty::Str {
-                            format!("({right})")
-                        } else {
-                            format!("str({right})")
-                        };
-
-                        Instr::Instr(format!("{left}+{right}"))
-                    }
-                    _ => Instr::Instr(format!("({left}){opchar}({right})")),
+    fn write_expr(&mut self, expr: &hir::Expr) {
+        // The root element of the function
+        match expr {
+            hir::Expr::ImplicitCast { ty: _, expr } => self.write_expr(&expr),
+            hir::Expr::Block { ty: _, insts } => {
+                for inst in insts {
+                    self.write_expr(inst);
                 }
             }
-            hir::Expr::Call { fun, ty: _, args } => {
-                let fun = self
-                    .unit
-                    .lookup_fun(fun)
-                    .expect("Expected an existing function"); // Its OK, if the function did not
-                                                              // exists then why we have a type
-                                                              // checker?
-                let args: Vec<_> = args
-                    .iter()
-                    .map(|e| {
-                        let arg = self.expr_to_py(outp, e);
-                        self.instr_to_str(&arg)
-                    })
-                    .collect();
-                Instr::Instr(format!("hk_{}({})", fun.name, args.join(",")))
-            }
-            hir::Expr::Block { ty: _, insts: _ } => {
-                Instr::Instr(format!("{}()", self.block_as_py_fun(outp, expr)))
-            }
-            hir::Expr::ImplicitCast { ty: _, expr } => {
-                // In python is not required to do any black magic, just ol' polimorphism
-                self.expr_to_py(outp, expr)
-            }
-            hir::Expr::VarRead { ty: _, var } => {
-                let var = self
-                    .unit
-                    .lookup_var(var)
-                    .expect("Expect that variable to exist");
-                Instr::Instr(format!("hkv_{}", var.name))
-            }
-            hir::Expr::UnaryOp { ty: _, op, expr } => match op {
-                hir::UOp::Neg => {
-                    let expr = self.expr_to_py(outp, expr);
-
-                    Instr::Instr(format!("(-({}))", self.instr_to_str(&expr)))
-                }
-            },
-
-            hir::Expr::VarDecl {
-                ty: _,
-                var,
-                expr,
-                scope,
-            } => {
-                unimplemented!()
+            ex => {
+                let ex = self.expr_to_str(&ex);
+                self.pf.code.push(ex)
             }
         }
+    }
+}
+
+#[derive(Default)]
+struct PyFileBuilder {
+    funcs: Vec<PyFun>,
+}
+
+pub struct Emitter;
+
+impl Emitter {
+    pub fn emit(unit: &hir::Unit) -> String {
+        // First the functions
+        let mut file = PyFileBuilder::default();
+        PyFunBuilder::build_entry(unit, &mut file, &unit.expr);
+        for fun in &unit.funpool {
+            // fun must not be STD
+            if matches!(fun.body, hir::FunBody::Std | hir::FunBody::Native) {
+                continue;
+            }
+
+            PyFunBuilder::build(unit, &mut file, fun);
+        }
+
+        // Dump
+        let mut outp = Vec::new();
+        outp.extend(STD.iter().map(|e| e.to_string()));
+
+        for fun in file.funcs {
+            outp.push(format!(
+                "def {}({})->{}:",
+                fun.name,
+                fun.params
+                    .into_iter()
+                    .map(|e| format!("{}:{}", e.0, e.1))
+                    .collect::<Vec<_>>()
+                    .join(","),
+                fun.ret
+            ));
+
+            if fun.code.len() == 0 {
+                outp.push(" pass".into());
+            }
+
+            for (i, line) in fun.code.iter().enumerate() {
+                if i==fun.code.len()-1 {
+                    outp.push(format!(" return {line}"));
+                }else{
+                    outp.push(format!(" {line}"));
+                }
+            }
+        }
+
+        outp.push("main()".into());
+
+        outp.join("\n")
     }
 }

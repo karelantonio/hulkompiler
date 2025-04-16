@@ -132,10 +132,23 @@ pub struct FunId(usize);
 #[derive(Debug, Clone, Copy)]
 pub struct VarId(usize);
 
+impl VarId {
+    pub(crate) fn id(&self) -> usize { self.0 }
+}
+
+/// A variable kind
+#[derive(Debug, Clone)]
+pub enum VarKind {
+    Local,
+    Param,
+    Global,
+}
+
 /// A variable
 #[derive(Debug, Clone)]
 pub struct Var {
     pub id: VarId,
+    pub kind: VarKind,
     pub name: String,
     pub ty: Ty,
 }
@@ -157,11 +170,12 @@ pub struct Scope {
 }
 
 impl Scope {
-    pub fn push_var(&mut self, name: &str, ty: Ty) -> VarId {
+    pub fn push_var(&mut self, name: &str, ty: Ty, kind: VarKind) -> VarId {
         let id = self.vars.len();
 
         self.vars.push(Var {
             id: VarId(id),
+            kind,
             name: name.into(),
             ty,
         });
@@ -551,7 +565,7 @@ impl TypeChecker {
             true,
         );
         // Standard library variables
-        tr.scope.push_var("PI", Ty::Num);
+        tr.scope.push_var("PI", Ty::Num, VarKind::Global);
 
         // First, add the stub functions
         tr.create_fun_stubs(ast)?;
@@ -664,7 +678,7 @@ impl TypeChecker {
 
         // Add variables to scope
         for arg in self.funpool[fid].args.iter() {
-            self.scope.push_var(&arg.name, arg.ty);
+            self.scope.push_var(&arg.name, arg.ty, VarKind::Param);
         }
 
         // Transform the function body
@@ -857,7 +871,7 @@ impl TypeChecker {
                 };
 
                 // Declare the var
-                let var = self.scope.push_var(&name, ty);
+                let var = self.scope.push_var(&name, ty, VarKind::Local);
 
                 let expr = if ty != expr.ty() {
                     Expr::ImplicitCast {
