@@ -14,7 +14,7 @@ pub enum LexError {
 }
 
 /// The tokens
-#[derive(Clone, Copy, Debug, PartialEq, Logos)]
+#[derive(Debug, Clone, Copy, PartialEq, Logos)]
 #[logos(skip r"[ \t\r\f]+")]
 pub enum Tk {
     // New line (ignored later)
@@ -125,6 +125,47 @@ pub enum Tk {
 
     #[regex(r"(0|[1-9][0-9]*)(\.[0-9]+)?")]
     Num,
+}
+
+impl core::fmt::Display for Tk {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", match &self {
+            Tk::Nl => "new line",
+            Tk::Function => "function",
+            Tk::Let => "let",
+            Tk::In => "in",
+            Tk::True => "true",
+            Tk::False => "false",
+            Tk::Add => "`+`",
+            Tk::Minus => "`-`",
+            Tk::Star => "`*`",
+            Tk::Slash => "`/`",
+            Tk::Power => "`^`",
+            Tk::Cat => "`@`",
+            Tk::Eq => "`==`",
+            Tk::Neq => "`!=`",
+            Tk::Le => "`<=`",
+            Tk::Ge => "`>=`",
+            Tk::Lt => "`<`",
+            Tk::Gt => "`>`",
+            Tk::Amp => "`&`",
+            Tk::Pipe => "`|`",
+            Tk::Excl => "`!`",
+            Tk::RArrow => "`=>`",
+            Tk::Reassign => "`:=`",
+            Tk::Assign => "`=`",
+            Tk::LPar => "`(`",
+            Tk::RPar => "`)`",
+            Tk::LBrac => "`{`",
+            Tk::RBrac => "`}`",
+            Tk::Comma => "`,`",
+            Tk::Colon => "`:`",
+            Tk::Semicolon => "`;`",
+            Tk::Str => "string",
+            Tk::Id => "identifier",
+            Tk::Num => "number",
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

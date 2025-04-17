@@ -156,13 +156,13 @@ pub enum ParseError {
     #[error("Could not tokenize the data")]
     Lexing(#[from] LexError),
 
-    #[error("Unexpected token {tok:?}, expecting one of: {expected:?}")]
+    #[error("Unexpected token {tok:?}, expecting one of: {}", expected.into_iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))]
     Unexpected {
         #[source]
         addr: crate::sourcehint::LocError,
         tok: Tk, // to make the borrow checker happy :)
         value: String,
-        expected: Cow<'static, [Tk]>,
+        expected: Vec<Tk>,
     },
 
     #[error("Reached end of file, expecting one of: {expected:?}")]
