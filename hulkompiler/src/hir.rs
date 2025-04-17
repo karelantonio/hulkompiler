@@ -1004,6 +1004,9 @@ impl TypeChecker {
                 // The body
                 let scope = self.to_expr(scope)?;
 
+                // Pop the var
+                self.scope.undo();
+
                 Expr::VarDecl {
                     ty,
                     var,
