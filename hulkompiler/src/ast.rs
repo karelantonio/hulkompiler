@@ -435,8 +435,6 @@ impl<'a> Parser<'a> {
     /// A statement (?) is an expresion ended with a semicolon ;
     /// <statement> ::= <expr> ';'
     fn reduce_statement(&mut self) -> PResult<Expr> {
-        let was_block = matches!(self.remaining(), [Tk::LBrac, ..]);
-
         let expr = self.reduce_expr()?;
         match self.remaining() {
             [Tk::Semicolon, ..] => {
@@ -444,6 +442,12 @@ impl<'a> Parser<'a> {
                 Ok(expr)
             }
             _ => {
+                let was_block = self
+                    .data
+                    .get(self.ptr - 1)
+                    .map(|e| matches!(e, Tk::RBrac))
+                    .unwrap_or(false);
+
                 if was_block {
                     Ok(expr)
                 } else {
