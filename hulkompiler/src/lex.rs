@@ -37,6 +37,15 @@ pub enum Tk {
     #[token("false")]
     False,
 
+    #[token("if")]
+    If,
+
+    #[token("elif")]
+    Elif,
+
+    #[token("else")]
+    Else,
+
     // Operators
     #[token("+")]
     Add,
@@ -129,13 +138,16 @@ pub enum Tk {
 
 impl core::fmt::Display for Tk {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", match &self {
+        write!(f, "{}", match self {
             Tk::Nl => "new line",
             Tk::Function => "function",
             Tk::Let => "let",
             Tk::In => "in",
             Tk::True => "true",
             Tk::False => "false",
+            Tk::If => "if",
+            Tk::Elif => "elif",
+            Tk::Else => "else",
             Tk::Add => "`+`",
             Tk::Minus => "`-`",
             Tk::Star => "`*`",

@@ -234,6 +234,15 @@ impl<'a> PyFunBuilder<'a> {
 
                 format!("[{name}:={assi},{sco}][1]")
             }
+
+            // A conditional expression
+            hir::Expr::Branch { ty: _, cond, ontrue, onfalse } => {
+                let cond = self.expr_to_str(cond);
+                let ontrue = self.expr_to_str(ontrue);
+                let onfalse = self.expr_to_str(onfalse);
+
+                format!("({ontrue})if({cond})else({onfalse})")
+            }
         }
     }
 

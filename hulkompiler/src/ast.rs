@@ -86,6 +86,15 @@ pub struct VarDeclExpr {
     pub scope: Box<Expr>,
 }
 
+// A conditional expression
+#[derive(Debug)]
+pub struct IfExpr {
+    pub loc: Loc,
+    pub cond: Box<Expr>,
+    pub ifarm: Box<Expr>,
+    pub elsearm: Box<Expr>,
+}
+
 // An expression
 #[derive(Debug)]
 pub enum Expr {
@@ -98,6 +107,7 @@ pub enum Expr {
     FunCallExpr(FunCallExpr),
     BlockExpr(BlockExpr),
     VarDeclExpr(VarDeclExpr),
+    IfExpr(IfExpr),
 }
 
 impl Expr {
@@ -112,6 +122,7 @@ impl Expr {
             Expr::BlockExpr(BlockExpr { loc, .. }) => loc,
             Expr::UnaryOpExpr(UnaryOpExpr { loc, .. }) => loc,
             Expr::VarDeclExpr(VarDeclExpr { loc, .. }) => loc,
+            Expr::IfExpr(IfExpr { loc, .. }) => loc,
         }
     }
 }
@@ -822,7 +833,108 @@ impl<'a> Parser<'a> {
             // A variable declaration
             [Tk::Let, ..] => self.reduce_expr_var_decl(),
 
+            // A conditional
+            [Tk::If, ..] => self.reduce_expr_if(),
+
             _ => Err(self.unexpected(&[Tk::Num, Tk::Str, Tk::Id, Tk::LPar])),
+        }
+    }
+
+    /// Reduce an IF ELIF ELSE conditional
+    /// <if> ::= IF ( <expr> ) <expr> <elif-chain>
+    fn reduce_expr_if(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+
+        match self.remaining() {
+            [Tk::If, ..] => {
+                self.take();
+            }
+            _ => return Err(self.unexpected(&[Tk::If])),
+        }
+
+        match self.remaining() {
+            [Tk::LPar, ..] => {
+                self.take();
+            }
+            _ => return Err(self.unexpected(&[Tk::LPar])),
+        }
+
+        let cond = self.reduce_expr()?;
+
+        match self.remaining() {
+            [Tk::RPar, ..] => {
+                self.take();
+            }
+            _ => return Err(self.unexpected(&[Tk::RPar])),
+        }
+
+        let ifbody = self.reduce_expr()?;
+
+        let elsebody = self.reduce_expr_elif_chain()?;
+
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+            content: self.text.clone(),
+        };
+
+        Ok(Expr::IfExpr(IfExpr {
+            loc,
+            cond: Box::new(cond),
+            ifarm: Box::new(ifbody),
+            elsearm: Box::new(elsebody),
+        }))
+    }
+
+    /// Reduce the elif chain
+    /// <elif-chain> ::= ELIF ( <expr> ) <expr> <elif-chain> | ELSE <expr>
+    fn reduce_expr_elif_chain(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+        match self.remaining() {
+            // An elif arm
+            [Tk::Elif, ..] => {
+                self.take();
+                // Parenthesis
+                match self.remaining() {
+                    [Tk::LPar, ..] => {
+                        self.take();
+                    }
+                    _ => return Err(self.unexpected(&[Tk::LPar])),
+                }
+                // Cond
+                let cond = self.reduce_expr()?;
+                // Right parenthesis
+                match self.remaining() {
+                    [Tk::RPar, ..] => {
+                        self.take();
+                    }
+                    _ => return Err(self.unexpected(&[Tk::RPar])),
+                }
+                // Body
+                let ifbody = self.reduce_expr()?;
+                // Else body
+                let elsebody = self.reduce_expr_elif_chain()?;
+
+                // Include all the conditional in the error message
+                let loc = Loc {
+                    start: loc_start,
+                    end: self.prev_addr_end().clone(),
+                    content: self.text.clone(),
+                };
+                Ok(Expr::IfExpr(IfExpr {
+                    loc,
+                    cond: Box::new(cond),
+                    ifarm: Box::new(ifbody),
+                    elsearm: Box::new(elsebody),
+                }))
+            }
+
+            // An else arm
+            [Tk::Else, ..] => {
+                self.take();
+                self.reduce_expr()
+            }
+            _ => Err(self.unexpected(&[Tk::Elif, Tk::Else])),
         }
     }
 

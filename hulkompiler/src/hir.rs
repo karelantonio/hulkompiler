@@ -134,6 +134,12 @@ pub enum Expr {
         op: UOp,
         expr: Box<Expr>,
     },
+    Branch {
+        ty: Ty,
+        cond: Box<Expr>,
+        ontrue: Box<Expr>,
+        onfalse: Box<Expr>,
+    },
 }
 
 impl Expr {
@@ -147,6 +153,7 @@ impl Expr {
             Self::VarRead { ty, .. } => ty,
             Self::UnaryOp { ty, .. } => ty,
             Self::VarDecl { ty, .. } => ty,
+            Self::Branch { ty, .. } => ty,
         }
     }
 
@@ -406,6 +413,12 @@ pub enum TypeError {
         #[source]
         loc: LocError,
     },
+
+    #[error("The condition expression in a branching instruction (if-elif-else) must be of type boolean")]
+    CondNotBoolean {
+        #[source]
+        loc: LocError,
+    },
 }
 
 type TResult<T> = Result<T, TypeError>;
@@ -553,6 +566,15 @@ impl TypeChecker {
         }
 
         Ok(())
+    }
+
+    /// Find the least common ancestor of both types
+    fn find_lca(&self, a: &Ty, b: &Ty) -> Ty {
+        if a==b {
+            *a
+        }else{
+            Ty::Obj
+        }
     }
 
     /// Transform the given expresion to the given unit
@@ -798,12 +820,12 @@ impl TypeChecker {
 
                 self.can_apply(&op, &left, &right, &binop.loc)?;
 
-                let ty = if op.is_arithmetic() {
-                    Ty::Num
+                let ty = if op.is_comparison() || op.is_logic() {
+                    Ty::Bool
                 } else if op == Op::Cat {
                     Ty::Str
-                } else if op.is_comparison() || op.is_logic() {
-                    Ty::Bool
+                } else if op.is_arithmetic() {
+                    Ty::Num
                 } else {
                     panic!("Unknown operator: {op:?}")
                 };
@@ -975,6 +997,49 @@ impl TypeChecker {
                     var,
                     expr: Box::new(expr),
                     scope: Box::new(scope),
+                }
+            }
+
+            crate::ast::Expr::IfExpr(crate::ast::IfExpr {
+                loc,
+                ifarm,
+                elsearm,
+                cond,
+            }) => {
+                let cond = self.to_expr(cond)?;
+
+                if cond.ty() != Ty::Bool {
+                    return Err(TypeError::CondNotBoolean {
+                        loc: self.make_loc_err(loc),
+                    });
+                }
+
+                let mut left = self.to_expr(ifarm)?;
+                let mut right = self.to_expr(elsearm)?;
+
+                // Find the LCA of both return types
+                let ty = self.find_lca(&left.ty(), &right.ty());
+
+                // Maybe insert some implicit casts
+                if left.ty() != ty {
+                    left = Expr::ImplicitCast {
+                        ty: ty.clone(),
+                        expr: Box::new(left),
+                    };
+                }
+
+                if right.ty() != ty {
+                    right = Expr::ImplicitCast {
+                        ty: ty.clone(),
+                        expr: Box::new(right),
+                    }
+                }
+
+                Expr::Branch {
+                    ty,
+                    cond: Box::new(cond),
+                    ontrue: Box::new(left),
+                    onfalse: Box::new(right),
                 }
             }
         })
