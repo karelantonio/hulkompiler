@@ -24,7 +24,7 @@ pub enum BinOp {
     Div,
     Pwr,
 
-    // Comparation
+    // Comparison
     Eq,
     Neq,
     Lt,
