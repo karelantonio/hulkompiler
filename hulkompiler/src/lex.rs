@@ -46,6 +46,9 @@ pub enum Tk {
     #[token("else")]
     Else,
 
+    #[token("while")]
+    While,
+
     // Operators
     #[token("+")]
     Add,
@@ -148,6 +151,7 @@ impl core::fmt::Display for Tk {
             Tk::If => "if",
             Tk::Elif => "elif",
             Tk::Else => "else",
+            Tk::While => "while",
             Tk::Add => "`+`",
             Tk::Minus => "`-`",
             Tk::Star => "`*`",

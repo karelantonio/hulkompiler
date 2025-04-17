@@ -1042,6 +1042,10 @@ impl TypeChecker {
                     onfalse: Box::new(right),
                 }
             }
+
+            crate::ast::Expr::WhileExpr(crate::ast::WhileExpr { body, cond, loc }) => {
+                todo!()
+            }
         })
     }
 }

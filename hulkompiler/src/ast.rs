@@ -95,6 +95,14 @@ pub struct IfExpr {
     pub elsearm: Box<Expr>,
 }
 
+/// A while expression
+#[derive(Debug)]
+pub struct WhileExpr {
+    pub loc: Loc,
+    pub cond: Box<Expr>,
+    pub body: Box<Expr>,
+}
+
 // An expression
 #[derive(Debug)]
 pub enum Expr {
@@ -108,6 +116,7 @@ pub enum Expr {
     BlockExpr(BlockExpr),
     VarDeclExpr(VarDeclExpr),
     IfExpr(IfExpr),
+    WhileExpr(WhileExpr),
 }
 
 impl Expr {
@@ -123,6 +132,7 @@ impl Expr {
             Expr::UnaryOpExpr(UnaryOpExpr { loc, .. }) => loc,
             Expr::VarDeclExpr(VarDeclExpr { loc, .. }) => loc,
             Expr::IfExpr(IfExpr { loc, .. }) => loc,
+            Expr::WhileExpr(WhileExpr { loc, .. }) => loc,
         }
     }
 }
@@ -836,8 +846,59 @@ impl<'a> Parser<'a> {
             // A conditional
             [Tk::If, ..] => self.reduce_expr_if(),
 
+            // A while loop
+            [Tk::While, ..] => self.reduce_expr_while(),
+
             _ => Err(self.unexpected(&[Tk::Num, Tk::Str, Tk::Id, Tk::LPar])),
         }
+    }
+
+    /// Reduce a while loop
+    /// <while> ::= WHILE ( <expr> ) <expr>
+    fn reduce_expr_while(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+
+        // while
+        match self.remaining() {
+            [Tk::While, ..] => {
+                self.take();
+            }
+            _ => return Err(self.unexpected(&[Tk::While])),
+        }
+
+        // (
+        match self.remaining() {
+            [Tk::LPar, ..] => {
+                self.take();
+            }
+            _ => return Err(self.unexpected(&[Tk::LPar])),
+        }
+
+        // Cond
+        let cond = self.reduce_expr()?;
+
+        // )
+        match self.remaining() {
+            [Tk::RPar, ..] => {
+                self.take();
+            }
+            _ => return Err(self.unexpected(&[Tk::RPar])),
+        }
+
+        // Body
+        let body = self.reduce_expr()?;
+
+        // Done :)
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+            content: self.text.clone(),
+        };
+        Ok(Expr::WhileExpr(WhileExpr {
+            loc,
+            cond: Box::new(cond),
+            body: Box::new(body),
+        }))
     }
 
     /// Reduce an IF ELIF ELSE conditional
