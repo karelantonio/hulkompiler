@@ -254,6 +254,23 @@ impl<'a> PyFunBuilder<'a> {
                 let body = self.expr_to_str(body);
                 format!("whileinstr(lambda:{cond},lambda:{body})")
             }
+
+            // A reassignment (destructive assignment)
+            hir::Expr::Reassign { ty: _, var, expr } => {
+                let var = self
+                    .unit
+                    .lookup_var(&var)
+                    .expect("Variable did not exist, program is in a bad state.");
+                let name = match &var.kind {
+                    hir::VarKind::Local => self.lookup_var(&var.id),
+                    hir::VarKind::Global => format!("hkv_{}", var.name),
+                    hir::VarKind::Param => format!("hkp_{}", var.name),
+                };
+
+                let body = self.expr_to_str(expr);
+
+                format!("{name}:=({body})")
+            }
         }
     }
 

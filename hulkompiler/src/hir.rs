@@ -145,6 +145,11 @@ pub enum Expr {
         cond: Box<Expr>,
         body: Box<Expr>,
     },
+    Reassign {
+        ty: Ty,
+        var: VarId,
+        expr: Box<Expr>,
+    },
 }
 
 impl Expr {
@@ -160,6 +165,7 @@ impl Expr {
             Self::VarDecl { ty, .. } => ty,
             Self::Branch { ty, .. } => ty,
             Self::Loop { ty, .. } => ty,
+            Self::Reassign { ty, .. } => ty,
         }
     }
 
@@ -431,6 +437,16 @@ pub enum TypeError {
         #[source]
         loc: LocError,
     },
+
+    #[error("The variable {name} referenced in this reassignment does not exist")]
+    ReassignVarDoesNotExist {
+        name: String,
+        #[source]
+        loc: LocError,
+    },
+
+    #[error("Reassigned value does not conform the variable's original type ({expr:?} cannot be interpreted as {vart:?})")]
+    ReassignDoesNotConform { expr: Ty, vart: Ty, loc: LocError },
 }
 
 type TResult<T> = Result<T, TypeError>;
@@ -1077,7 +1093,43 @@ impl TypeChecker {
             }
 
             crate::ast::Expr::Reassign(crate::ast::Reassign { expr, name, loc }) => {
-                todo!()
+                let var = *self.scope.reverse_vars.get(name).ok_or(
+                    TypeError::ReassignVarDoesNotExist {
+                        name: name.into(),
+                        loc: self.make_loc_err(loc),
+                    },
+                )?;
+
+                // Lookup the variable type
+                let vt = self.scope.vars[var.0].ty;
+
+                // The body
+                let mut expr = self.to_expr(expr)?;
+                let exprt = expr.ty();
+
+                // Check if type conforms
+                if !self.ty_conforms(&exprt, &vt) {
+                    return Err(TypeError::ReassignDoesNotConform {
+                        expr: exprt,
+                        vart: vt,
+                        loc: self.make_loc_err(loc),
+                    });
+                }
+
+                // Add an implicit cast?
+                if vt != exprt {
+                    expr = Expr::ImplicitCast {
+                        ty: vt.clone(),
+                        expr: Box::new(expr),
+                    };
+                }
+
+                // Now reassign
+                Expr::Reassign {
+                    ty: vt,
+                    var,
+                    expr: Box::new(expr),
+                }
             }
         })
     }
