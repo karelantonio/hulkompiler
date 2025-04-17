@@ -1075,6 +1075,10 @@ impl TypeChecker {
                     body: Box::new(body),
                 }
             }
+
+            crate::ast::Expr::Reassign(crate::ast::Reassign { expr, name, loc }) => {
+                todo!()
+            }
         })
     }
 }

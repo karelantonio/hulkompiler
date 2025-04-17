@@ -103,6 +103,14 @@ pub struct WhileExpr {
     pub body: Box<Expr>,
 }
 
+/// A reassign (destructive assignment)
+#[derive(Debug)]
+pub struct Reassign {
+    pub loc: Loc,
+    pub name: String,
+    pub expr: Box<Expr>,
+}
+
 // An expression
 #[derive(Debug)]
 pub enum Expr {
@@ -117,6 +125,7 @@ pub enum Expr {
     VarDeclExpr(VarDeclExpr),
     IfExpr(IfExpr),
     WhileExpr(WhileExpr),
+    Reassign(Reassign),
 }
 
 impl Expr {
@@ -133,6 +142,7 @@ impl Expr {
             Expr::VarDeclExpr(VarDeclExpr { loc, .. }) => loc,
             Expr::IfExpr(IfExpr { loc, .. }) => loc,
             Expr::WhileExpr(WhileExpr { loc, .. }) => loc,
+            Expr::Reassign(Reassign { loc, .. }) => loc,
         }
     }
 }
@@ -812,6 +822,9 @@ impl<'a> Parser<'a> {
             // A function call
             [Tk::Id, Tk::LPar, ..] => self.reduce_expr_fn_call(),
 
+            // A reassign
+            [Tk::Id, Tk::Reassign, ..] => self.reduce_expr_reassign(),
+
             // A variable
             [Tk::Id, ..] => {
                 // Pop the identifier
@@ -851,6 +864,39 @@ impl<'a> Parser<'a> {
 
             _ => Err(self.unexpected(&[Tk::Num, Tk::Str, Tk::Id, Tk::LPar])),
         }
+    }
+
+    /// Reduce a reassign (destructive assignment)
+    /// <reassign> ::= ID ':=' <expr>
+    fn reduce_expr_reassign(&mut self) -> PResult<Expr> {
+        let loc_start = self.addr_start().clone();
+        let name = match self.remaining() {
+            [Tk::Id, ..] => self.take().to_string(),
+            _ => return Err(self.unexpected(&[Tk::Id])),
+        };
+
+        // :=
+        match self.remaining() {
+            [Tk::Reassign, ..] => {
+                self.take();
+            }
+            _ => return Err(self.unexpected(&[Tk::Reassign])),
+        }
+
+        // Expr
+        let expr = self.reduce_expr()?;
+
+        let loc = Loc {
+            start: loc_start,
+            end: self.prev_addr_end().clone(),
+            content: self.text.clone(),
+        };
+
+        Ok(Expr::Reassign(Reassign {
+            loc,
+            name: name,
+            expr: Box::new(expr),
+        }))
     }
 
     /// Reduce a while loop
