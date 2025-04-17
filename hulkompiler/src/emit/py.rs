@@ -18,6 +18,10 @@ const STD: &[&str] = &[
     "def hk_rand()->float: return uniform(0, 1)",
     "hkv_PI = pi",
     "# End of HULK standard library",
+    "# Begin of prelude",
+    "def whileinstr(cond:callable,body:callable):",
+    " while cond(): body()",
+    "# End of prelude",
 ];
 
 /// Convert a type to string
@@ -242,6 +246,13 @@ impl<'a> PyFunBuilder<'a> {
                 let onfalse = self.expr_to_str(onfalse);
 
                 format!("({ontrue})if({cond})else({onfalse})")
+            }
+
+            // A loop structure
+            hir::Expr::Loop { ty: _, cond, body } => {
+                let cond = self.expr_to_str(cond);
+                let body = self.expr_to_str(body);
+                format!("whileinstr(lambda:{cond},lambda:{body})")
             }
         }
     }

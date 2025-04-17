@@ -140,6 +140,11 @@ pub enum Expr {
         ontrue: Box<Expr>,
         onfalse: Box<Expr>,
     },
+    Loop {
+        ty: Ty,
+        cond: Box<Expr>,
+        body: Box<Expr>,
+    },
 }
 
 impl Expr {
@@ -154,6 +159,7 @@ impl Expr {
             Self::UnaryOp { ty, .. } => ty,
             Self::VarDecl { ty, .. } => ty,
             Self::Branch { ty, .. } => ty,
+            Self::Loop { ty, .. } => ty,
         }
     }
 
@@ -419,6 +425,12 @@ pub enum TypeError {
         #[source]
         loc: LocError,
     },
+
+    #[error("The condition of a loop must be of type boolean")]
+    LoopCondNotBoolean {
+        #[source]
+        loc: LocError,
+    },
 }
 
 type TResult<T> = Result<T, TypeError>;
@@ -570,9 +582,9 @@ impl TypeChecker {
 
     /// Find the least common ancestor of both types
     fn find_lca(&self, a: &Ty, b: &Ty) -> Ty {
-        if a==b {
+        if a == b {
             *a
-        }else{
+        } else {
             Ty::Obj
         }
     }
@@ -1044,7 +1056,21 @@ impl TypeChecker {
             }
 
             crate::ast::Expr::WhileExpr(crate::ast::WhileExpr { body, cond, loc }) => {
-                todo!()
+                let cond = self.to_expr(cond)?;
+
+                if cond.ty() != Ty::Bool {
+                    return Err(TypeError::LoopCondNotBoolean {
+                        loc: self.make_loc_err(loc),
+                    });
+                }
+
+                let body = self.to_expr(body)?;
+
+                Expr::Loop {
+                    ty: body.ty(),
+                    cond: Box::new(cond),
+                    body: Box::new(body),
+                }
             }
         })
     }
