@@ -269,7 +269,7 @@ impl<'a> PyFunBuilder<'a> {
 
                 let body = self.expr_to_str(expr);
 
-                format!("{name}:=({body})")
+                format!("({name}:=({body}))")
             }
         }
     }
