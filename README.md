@@ -170,11 +170,11 @@ After type checking, the HIR:
 
 Seems like we make the problem worse but this is actually a very useful step, it make A LOT easier the following stage
 
-# Code Generation
+## Code Generation
 
 In this step we take the previour HIR and transform into some intermediate language. In our case we trasnform into Python code, which can be run like in the first example. Its very language-dependent so there is no general way to explain the logic. To get a better understanding see the `emit` module.
 
-# License
+## License
 
 This project is licensed under GNU General Public License v3:
 
