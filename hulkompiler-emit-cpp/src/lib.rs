@@ -20,6 +20,11 @@ impl ScopeBuilder {
                 Instruction::Scope(sco) => sco.dump_to(to),
             }
         }
+
+        // Free the variables
+        for var in self.vars {
+            to.push(format!("  delete v_{var};"));
+        }
     }
 }
 
