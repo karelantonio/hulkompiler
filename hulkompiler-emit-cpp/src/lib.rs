@@ -13,7 +13,7 @@ pub struct ScopeBuilder {
 }
 
 impl ScopeBuilder {
-    fn dump_to(self, to: &mut Vec<String>) {
+    fn dump_to(mut self, to: &mut Vec<String>) {
         for inst in self.outp {
             match inst {
                 Instruction::Line(val) => to.push(val),
@@ -22,6 +22,7 @@ impl ScopeBuilder {
         }
 
         // Free the variables
+        self.vars.reverse();
         for var in self.vars {
             to.push(format!("  delete v_{var};"));
         }
@@ -91,7 +92,8 @@ impl<'a> Emitter<'a> {
 
         // Now the entry point
         let mut sco = inst.alloc_scope();
-        let _ = inst.emit_expr(&mut sco, &unit.expr);
+        let e = inst.emit_expr(&mut sco, &unit.expr);
+        sco.vars.push(e);
 
         inst.outp.push("int main() {".into());
         sco.dump_to(&mut inst.outp);
@@ -113,13 +115,14 @@ impl<'a> Emitter<'a> {
             .collect::<Vec<_>>()
             .join(",");
 
-        self.outp.push(format!("{ret} hk_{name}({args}) {{"));
+        self.outp.push(format!("{ret} *hk_{name}({args}) {{"));
 
         match &fun.body {
             hir::expr::FunBody::Expr(expr) => {
                 let mut scope = self.alloc_scope();
-                self.emit_expr(&mut scope, expr);
+                let last = self.emit_expr(&mut scope, expr);
                 scope.dump_to(&mut self.outp);
+                self.outp.push(format!("  return v_{last};"));
             }
             _ => (),
         }
