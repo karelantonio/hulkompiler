@@ -9,6 +9,7 @@ const STD: &str = include_str!("../std.cpp");
 pub struct ScopeBuilder {
     id: usize,
     outp: Vec<Instruction>,
+    vars: Vec<usize>,
 }
 
 impl ScopeBuilder {
@@ -60,6 +61,7 @@ impl<'a> Emitter<'a> {
         ScopeBuilder {
             id,
             outp: Vec::new(),
+            vars: Vec::new(),
         }
     }
 
@@ -130,19 +132,24 @@ impl<'a> Emitter<'a> {
                     .lookup_const(cons)
                     .expect("Program is in a bad state");
                 match &cons.value {
-                    hir::expr::ConstValue::Num(num) => format!("HkNumber({num})"),
+                    hir::expr::ConstValue::Num(num) => format!("new HkNumber({num})"),
                     hir::expr::ConstValue::Bool(b) => {
-                        format!("HkBoolean({})", if *b { "true" } else { "false" })
+                        format!("new HkBoolean({})", if *b { "true" } else { "false" })
                     }
-                    hir::expr::ConstValue::Str(s) => format!("HkString(\"{s}\")"),
+                    hir::expr::ConstValue::Str(s) => format!("new HkString(\"{s}\")"),
                 }
             }
 
             // An implicit cast
-            hir::expr::Expr::ImplicitCast { ty: _, expr } => {
-                // Actually, we dont need to create a new variable
-                //format!("v_{}", self.emit_expr(scope, expr))
-                return self.emit_expr(scope, expr);
+            hir::expr::Expr::ImplicitCast { ty, expr } => {
+                // Repr if needed
+                if *ty == hir::ty::Ty::Str && expr.ty() != hir::ty::Ty::Str {
+                    let res = self.emit_expr(scope, expr);
+                    scope.vars.push(res);
+                    format!("new HkString(v_{res})")
+                } else {
+                    return self.emit_expr(scope, expr);
+                }
             }
 
             // A variable read
@@ -164,19 +171,48 @@ impl<'a> Emitter<'a> {
 
                 let mut fargs = Vec::new();
                 for arg in args {
-                    fargs.push(format!("v_{}", self.emit_expr(scope, arg)));
+                    let res = self.emit_expr(scope, arg);
+                    scope.vars.push(res);
+                    fargs.push(format!("v_{}", res));
                 }
 
                 format!("hk_{name}({})", fargs.join(","))
             }
 
+            // An unary operator
+            hir::expr::Expr::UnaryOp { ty: _, op, expr } => {
+                let op = match op {
+                    hir::ops::UOp::Neg => "-",
+                    hir::ops::UOp::Not => "!",
+                };
+
+                let vr = self.emit_expr(scope, expr);
+                scope.vars.push(vr);
+                format!("{op}v_{vr}")
+            }
+
+            // Binary operator (concat)
+            hir::expr::Expr::BinOp {
+                op: hir::ops::Op::Cat,
+                ty: _,
+                left,
+                right,
+            } => {
+                let left = self.emit_expr(scope, left);
+                scope.vars.push(left);
+                let right = self.emit_expr(scope, right);
+                scope.vars.push(right);
+                format!("v_{left}->cat(v_{right})")
+            }
+
+            // Other binary operator
             _ => panic!("Dont know how to process {expr:?}"),
         };
         let res = self.alloc_var();
         let ty = self.ty_to_str(&expr.ty());
         scope
             .outp
-            .push(Instruction::Line(format!("  {ty} v_{res} = {ex};")));
+            .push(Instruction::Line(format!("  {ty}* v_{res} = {ex};")));
 
         res
     }
