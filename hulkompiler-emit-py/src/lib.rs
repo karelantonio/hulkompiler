@@ -26,12 +26,12 @@ const STD: &[&str] = &[
 ];
 
 /// Convert a type to string
-fn ty_to_str(ty: &hir::Ty) -> &str {
+fn ty_to_str(ty: &hir::ty::Ty) -> &str {
     match ty {
-        hir::Ty::Obj => "object",
-        hir::Ty::Str => "str",
-        hir::Ty::Num => "float",
-        hir::Ty::Bool => "bool",
+        hir::ty::Ty::Obj => "object",
+        hir::ty::Ty::Str => "str",
+        hir::ty::Ty::Num => "float",
+        hir::ty::Ty::Bool => "bool",
     }
 }
 
@@ -45,42 +45,42 @@ struct PyFun {
 
 struct PyFunBuilder<'a> {
     pf: PyFun,
-    unit: &'a hir::Unit,
+    unit: &'a hir::unit::Unit,
     file: &'a mut PyFileBuilder,
 }
 
 impl<'a> PyFunBuilder<'a> {
-    fn lookup_var_read(&mut self, vid: &hir::VarId) -> String {
+    fn lookup_var_read(&mut self, vid: &hir::expr::VarId) -> String {
         let var = self.unit.lookup_var(vid);
 
         match var {
-            Some(hir::Var {
+            Some(hir::expr::Var {
                 name,
-                kind: hir::VarKind::Global,
+                kind: hir::expr::VarKind::Global,
                 ..
             }) => format!("hkv_{name}"),
             _ => format!("locals[{}]", vid.id()),
         }
     }
 
-    fn lookup_var_set(&mut self, vid: &hir::VarId, val: String) -> String {
+    fn lookup_var_set(&mut self, vid: &hir::expr::VarId, val: String) -> String {
         let var = self.unit.lookup_var(vid);
         match var {
-            Some(hir::Var {
+            Some(hir::expr::Var {
                 name,
-                kind: hir::VarKind::Global,
+                kind: hir::expr::VarKind::Global,
                 ..
             }) => format!("hkv_{name}=({val})"),
             _ => format!("locals.__setitem__({},{})", vid.id(), val),
         }
     }
 
-    fn push_var(&mut self, vid: &hir::VarId) -> String {
+    fn push_var(&mut self, vid: &hir::expr::VarId) -> String {
         format!("locals[{}]", vid.id())
     }
 
     /// The program entry point
-    fn build_entry(unit: &'a hir::Unit, file: &'a mut PyFileBuilder, expr: &hir::Expr) {
+    fn build_entry(unit: &'a hir::unit::Unit, file: &'a mut PyFileBuilder, expr: &hir::expr::Expr) {
         let pf = PyFun {
             name: "main".into(),
             ret: "None".into(),
@@ -95,7 +95,7 @@ impl<'a> PyFunBuilder<'a> {
     }
 
     /// Build a function
-    fn build(unit: &'a hir::Unit, file: &'a mut PyFileBuilder, fun: &hir::Fun) {
+    fn build(unit: &'a hir::unit::Unit, file: &'a mut PyFileBuilder, fun: &hir::expr::Fun) {
         let pf = PyFun {
             name: format!("hk_{}", fun.name),
             ret: ty_to_str(&fun.ty).into(),
@@ -113,11 +113,11 @@ impl<'a> PyFunBuilder<'a> {
 
     /// Build a pyfunction
     fn build_pyfun(
-        unit: &'a hir::Unit,
+        unit: &'a hir::unit::Unit,
         file: &'a mut PyFileBuilder,
         pf: PyFun,
-        body: &hir::FunBody,
-        params: &[hir::FunArg],
+        body: &hir::expr::FunBody,
+        params: &[hir::expr::FunArg],
     ) {
         let mut slf = Self { pf, unit, file };
 
@@ -130,38 +130,38 @@ impl<'a> PyFunBuilder<'a> {
         slf.pf.code.push(bld.join(";"));
 
         match body {
-            hir::FunBody::Expr(e) => slf.write_expr(&e),
-            hir::FunBody::Std => slf.pf.code.push("pass #Defined in STD".into()),
-            hir::FunBody::Native => slf.pf.code.push("pass #Native".into()),
+            hir::expr::FunBody::Expr(e) => slf.write_expr(&e),
+            hir::expr::FunBody::Std => slf.pf.code.push("pass #Defined in STD".into()),
+            hir::expr::FunBody::Native => slf.pf.code.push("pass #Native".into()),
         }
 
         slf.file.funcs.push(slf.pf);
     }
 
-    fn expr_to_str(&mut self, expr: &hir::Expr) -> String {
+    fn expr_to_str(&mut self, expr: &hir::expr::Expr) -> String {
         match expr {
             // Ignore, python makes it easy
-            hir::Expr::ImplicitCast { ty: _, expr } => self.expr_to_str(expr),
+            hir::expr::Expr::ImplicitCast { ty: _, expr } => self.expr_to_str(expr),
 
             // A constant
-            hir::Expr::Const { cons, ty: _ } => {
+            hir::expr::Expr::Const { cons, ty: _ } => {
                 // lookup the const in the unit:
                 let cons = self
                     .unit
                     .lookup_const(&cons)
                     .expect("Constant did not exist, program is in a bad state.");
                 match &cons.value {
-                    hir::ConstValue::Num(nu) => format!("{nu}"),
-                    hir::ConstValue::Bool(bo) => if *bo { "True" } else { "False" }.into(),
-                    hir::ConstValue::Str(s) => format!("\"{s}\""),
+                    hir::expr::ConstValue::Num(nu) => format!("{nu}"),
+                    hir::expr::ConstValue::Bool(bo) => if *bo { "True" } else { "False" }.into(),
+                    hir::expr::ConstValue::Str(s) => format!("\"{s}\""),
                 }
             }
 
             // Access a variable
-            hir::Expr::VarRead { ty: _, var } => self.lookup_var_read(var),
+            hir::expr::Expr::VarRead { ty: _, var } => self.lookup_var_read(var),
 
             // A function call
-            hir::Expr::Call { fun, ty: _, args } => {
+            hir::expr::Expr::Call { fun, ty: _, args } => {
                 // First lookup
                 let fun = self
                     .unit
@@ -173,10 +173,10 @@ impl<'a> PyFunBuilder<'a> {
             }
 
             // An unary expression
-            hir::Expr::UnaryOp { ty: _, op, expr } => {
+            hir::expr::Expr::UnaryOp { ty: _, op, expr } => {
                 let opch = match op {
-                    hir::UOp::Neg => "-",
-                    hir::UOp::Not => "not",
+                    hir::ops::UOp::Neg => "-",
+                    hir::ops::UOp::Not => "not",
                 };
                 let expr = self.expr_to_str(expr);
 
@@ -184,20 +184,20 @@ impl<'a> PyFunBuilder<'a> {
             }
 
             // A binary expression (Concat)
-            hir::Expr::BinOp {
-                op: hir::Op::Cat,
+            hir::expr::Expr::BinOp {
+                op: hir::ops::Op::Cat,
                 ty: _,
                 left,
                 right,
             } => {
                 let lrepr = self.expr_to_str(left);
                 let rrepr = self.expr_to_str(right);
-                let left = if left.ty() != hir::Ty::Str {
+                let left = if left.ty() != hir::ty::Ty::Str {
                     format!("str({lrepr})")
                 } else {
                     format!("({lrepr})")
                 };
-                let right = if right.ty() != hir::Ty::Str {
+                let right = if right.ty() != hir::ty::Ty::Str {
                     format!("str({rrepr})")
                 } else {
                     format!("({rrepr})")
@@ -207,7 +207,7 @@ impl<'a> PyFunBuilder<'a> {
             }
 
             // A binary expression
-            hir::Expr::BinOp {
+            hir::expr::Expr::BinOp {
                 op,
                 ty: _,
                 left,
@@ -216,27 +216,27 @@ impl<'a> PyFunBuilder<'a> {
                 let lrepr = self.expr_to_str(left);
                 let rrepr = self.expr_to_str(right);
                 let opch = match op {
-                    hir::Op::Add => "+",
-                    hir::Op::Sub => "-",
-                    hir::Op::Mul => "*",
-                    hir::Op::Div => "/",
-                    hir::Op::Pow => "**",
-                    hir::Op::Le => "<=",
-                    hir::Op::Lt => "<",
-                    hir::Op::Ge => ">=",
-                    hir::Op::Gt => ">",
-                    hir::Op::Eq => "==",
-                    hir::Op::Neq => "!=",
-                    hir::Op::And => "and",
-                    hir::Op::Or => "or",
-                    hir::Op::Cat => unreachable!(),
+                    hir::ops::Op::Add => "+",
+                    hir::ops::Op::Sub => "-",
+                    hir::ops::Op::Mul => "*",
+                    hir::ops::Op::Div => "/",
+                    hir::ops::Op::Pow => "**",
+                    hir::ops::Op::Le => "<=",
+                    hir::ops::Op::Lt => "<",
+                    hir::ops::Op::Ge => ">=",
+                    hir::ops::Op::Gt => ">",
+                    hir::ops::Op::Eq => "==",
+                    hir::ops::Op::Neq => "!=",
+                    hir::ops::Op::And => "and",
+                    hir::ops::Op::Or => "or",
+                    hir::ops::Op::Cat => unreachable!(),
                 };
 
                 format!("({lrepr}){opch}({rrepr})")
             }
 
             // A group of expressions
-            hir::Expr::Block { ty: _, insts } => {
+            hir::expr::Expr::Block { ty: _, insts } => {
                 let res = insts
                     .iter()
                     .map(|e| self.expr_to_str(e))
@@ -246,7 +246,7 @@ impl<'a> PyFunBuilder<'a> {
             }
 
             // A variable declaration
-            hir::Expr::VarDecl {
+            hir::expr::Expr::VarDecl {
                 ty: _,
                 var,
                 expr,
@@ -260,7 +260,7 @@ impl<'a> PyFunBuilder<'a> {
             }
 
             // A conditional expression
-            hir::Expr::Branch {
+            hir::expr::Expr::Branch {
                 ty: _,
                 cond,
                 ontrue,
@@ -274,14 +274,14 @@ impl<'a> PyFunBuilder<'a> {
             }
 
             // A loop structure
-            hir::Expr::Loop { ty: _, cond, body } => {
+            hir::expr::Expr::Loop { ty: _, cond, body } => {
                 let cond = self.expr_to_str(cond);
                 let body = self.expr_to_str(body);
                 format!("whileinstr(lambda:{cond},lambda:{body})")
             }
 
             // A reassignment (destructive assignment)
-            hir::Expr::Reassign { ty: _, var, expr } => {
+            hir::expr::Expr::Reassign { ty: _, var, expr } => {
                 let body = self.expr_to_str(expr);
                 let assi = self.lookup_var_set(var, body);
                 let get = self.lookup_var_read(var);
@@ -291,7 +291,7 @@ impl<'a> PyFunBuilder<'a> {
         }
     }
 
-    fn write_expr(&mut self, expr: &hir::Expr) {
+    fn write_expr(&mut self, expr: &hir::expr::Expr) {
         // The root element of the function
         let res = self.expr_to_str(expr);
         self.pf.code.push(res);
@@ -306,13 +306,13 @@ struct PyFileBuilder {
 pub struct Emitter;
 
 impl Emitter {
-    pub fn emit(unit: &hir::Unit) -> String {
+    pub fn emit(unit: &hir::unit::Unit) -> String {
         // First the functions
         let mut file = PyFileBuilder::default();
         PyFunBuilder::build_entry(unit, &mut file, &unit.expr);
         for fun in &unit.funpool {
             // fun must not be STD
-            if matches!(fun.body, hir::FunBody::Std | hir::FunBody::Native) {
+            if matches!(fun.body, hir::expr::FunBody::Std | hir::expr::FunBody::Native) {
                 continue;
             }
 
