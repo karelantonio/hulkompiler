@@ -222,6 +222,18 @@ pub struct Scope {
 }
 
 impl Scope {
+
+    pub fn push_oldvar(&mut self, name: &str, id: &VarId) {
+        if let Some(oldid) = self.reverse_vars.insert(name.into(), *id) {
+            self.deltas.push(ScopeDelta::Shadowed {
+                old: oldid,
+                new: *id,
+            });
+        } else {
+            self.deltas.push(ScopeDelta::New { id: *id })
+        }
+    }
+
     pub fn push_var(&mut self, name: &str, ty: Ty, kind: VarKind) -> VarId {
         let id = self.vars.len();
 
@@ -282,6 +294,7 @@ pub enum FunBody {
 pub struct FunArg {
     pub name: String,
     pub ty: Ty,
+    pub id: VarId,
 }
 
 /// A function
@@ -605,6 +618,19 @@ impl TypeChecker {
         }
     }
 
+    /// Reserve a function param
+    fn reserve_fn_param(&mut self, name: &str, ty: &Ty) -> FunArg {
+        let arg = FunArg {
+            name: name.into(),
+            ty: *ty,
+            id: self.scope.push_var(name, *ty, VarKind::Param),
+        };
+
+        self.scope.undo();
+
+        arg
+    }
+
     /// Transform the given expresion to the given unit
     pub fn transform(ast: &[crate::ast::RootElem]) -> TResult<Unit> {
         // Transform this expr to our expr
@@ -612,77 +638,21 @@ impl TypeChecker {
         tr.push_boolean_constants();
 
         // Add the Standard library functions
-        tr.add_stub_fun(
-            "print",
-            Ty::Obj,
-            &[FunArg {
-                name: "arg0".into(),
-                ty: Ty::Obj,
-            }],
-            true,
-        );
+        let params = [tr.reserve_fn_param("val", &Ty::Obj)];
+        tr.add_stub_fun("print", Ty::Obj, &params, true);
         // -- math functions --
-        tr.add_stub_fun(
-            "sqrt",
-            Ty::Num,
-            &[FunArg {
-                name: "arg0".into(),
-                ty: Ty::Num,
-            }],
-            true,
-        );
-        tr.add_stub_fun(
-            "sin",
-            Ty::Num,
-            &[FunArg {
-                name: "arg0".into(),
-                ty: Ty::Num,
-            }],
-            true,
-        );
-        tr.add_stub_fun(
-            "cos",
-            Ty::Num,
-            &[FunArg {
-                name: "arg0".into(),
-                ty: Ty::Num,
-            }],
-            true,
-        );
-        tr.add_stub_fun(
-            "exp",
-            Ty::Num,
-            &[FunArg {
-                name: "arg0".into(),
-                ty: Ty::Num,
-            }],
-            true,
-        );
-        tr.add_stub_fun(
-            "log",
-            Ty::Num,
-            &[
-                FunArg {
-                    name: "arg0".into(),
-                    ty: Ty::Num,
-                },
-                FunArg {
-                    name: "arg1".into(),
-                    ty: Ty::Num,
-                },
-            ],
-            true,
-        );
+        let params = [tr.reserve_fn_param("x", &Ty::Num)];
+        tr.add_stub_fun("sqrt", Ty::Num, &params, true);
+        tr.add_stub_fun("sin", Ty::Num, &params, true);
+        tr.add_stub_fun("cos", Ty::Num, &params, true);
+        tr.add_stub_fun("exp", Ty::Num, &params, true);
+        tr.add_stub_fun("floor", Ty::Num, &params, true);
+        let params = [
+            tr.reserve_fn_param("base", &Ty::Num),
+            tr.reserve_fn_param("arg", &Ty::Num),
+        ];
+        tr.add_stub_fun("log", Ty::Num, &params, true);
         tr.add_stub_fun("rand", Ty::Num, &[], true);
-        tr.add_stub_fun(
-            "floor",
-            Ty::Num,
-            &[FunArg {
-                name: "arg0".into(),
-                ty: Ty::Num,
-            }],
-            true,
-        );
         // Standard library variables
         tr.scope.push_var("PI", Ty::Num, VarKind::Global);
 
@@ -741,13 +711,11 @@ impl TypeChecker {
                         loc: self.make_loc_err(&fun.loc),
                         name: aname.clone(),
                     })?;
-                    Ok(FunArg {
+                    let ty = self.str_to_ty(&argty).ok_or(TypeError::UnknownTy {
+                        loc: self.make_loc_err(&fun.loc),
                         name: aname.clone(),
-                        ty: self.str_to_ty(&argty).ok_or(TypeError::UnknownTy {
-                            loc: self.make_loc_err(&fun.loc),
-                            name: aname.into(),
-                        })?,
-                    })
+                    })?;
+                    Ok(self.reserve_fn_param(&aname, &ty))
                 })
                 .collect::<Result<Vec<_>, TypeError>>()?;
 
@@ -806,7 +774,7 @@ impl TypeChecker {
 
         // Add variables to scope
         for arg in self.funpool[fid].args.iter() {
-            self.scope.push_var(&arg.name, arg.ty, VarKind::Param);
+            self.scope.push_oldvar(&arg.name, &arg.id);
         }
 
         // Transform the function body

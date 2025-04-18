@@ -1,6 +1,7 @@
 //! Transpile HULK to python (3)
 
 use crate::hir;
+use std::collections::BTreeMap;
 
 const STD: &[&str] = &[
     "# Standard library of HULK",
@@ -38,7 +39,7 @@ struct PyFun {
     name: String,
     ret: String,
     params: Vec<(String, String)>,
-    vars: Vec<usize>,
+    varmap: BTreeMap<usize, usize>,
     code: Vec<String>,
 }
 
@@ -49,13 +50,33 @@ struct PyFunBuilder<'a> {
 }
 
 impl<'a> PyFunBuilder<'a> {
-    fn alloc_var(&mut self, vid: &hir::VarId) -> String {
-        self.pf.vars.push(vid.id());
-        format!("hks_{}", vid.id())
+    fn lookup_var_read(&mut self, vid: &hir::VarId) -> String {
+        let var = self.unit.lookup_var(vid);
+
+        match var {
+            Some(hir::Var {
+                name,
+                kind: hir::VarKind::Global,
+                ..
+            }) => format!("hkv_{name}"),
+            _ => format!("locals[{}]", vid.id()),
+        }
     }
 
-    fn lookup_var(&mut self, vid: &hir::VarId) -> String {
-        format!("hks_{}", vid.id())
+    fn lookup_var_set(&mut self, vid: &hir::VarId, val: String) -> String {
+        let var = self.unit.lookup_var(vid);
+        match var {
+            Some(hir::Var {
+                name,
+                kind: hir::VarKind::Global,
+                ..
+            }) => format!("hkv_{name}=({val})"),
+            _ => format!("locals.__setitem__({},{})", vid.id(), val),
+        }
+    }
+
+    fn push_var(&mut self, vid: &hir::VarId) -> String {
+        format!("locals[{}]", vid.id())
     }
 
     /// The program entry point
@@ -64,10 +85,11 @@ impl<'a> PyFunBuilder<'a> {
             name: "main".into(),
             ret: "None".into(),
             params: vec![],
-            vars: vec![],
+            varmap: Default::default(),
             code: vec![],
         };
         let mut slf = Self { pf, unit, file };
+        slf.pf.code.push("locals=dict()".into());
         slf.write_expr(expr);
         slf.file.funcs.push(slf.pf);
     }
@@ -80,13 +102,13 @@ impl<'a> PyFunBuilder<'a> {
             params: fun
                 .args
                 .iter()
-                .map(|arg| (format!("hkp_{}", arg.name), ty_to_str(&arg.ty).into()))
+                .map(|arg| (format!("p_{}", arg.name), ty_to_str(&arg.ty).into()))
                 .collect(),
-            vars: vec![],
+            varmap: Default::default(),
             code: vec![],
         };
 
-        Self::build_pyfun(unit, file, pf, &fun.body)
+        Self::build_pyfun(unit, file, pf, &fun.body, &fun.args)
     }
 
     /// Build a pyfunction
@@ -95,8 +117,17 @@ impl<'a> PyFunBuilder<'a> {
         file: &'a mut PyFileBuilder,
         pf: PyFun,
         body: &hir::FunBody,
+        params: &[hir::FunArg],
     ) {
         let mut slf = Self { pf, unit, file };
+
+        // add the args
+        slf.pf.code.push("locals=dict()".into());
+        let mut bld = Vec::new();
+        for arg in params {
+            bld.push(format!("{}=p_{}", slf.push_var(&arg.id), arg.name));
+        }
+        slf.pf.code.push(bld.join(";"));
 
         match body {
             hir::FunBody::Expr(e) => slf.write_expr(&e),
@@ -127,17 +158,7 @@ impl<'a> PyFunBuilder<'a> {
             }
 
             // Access a variable
-            hir::Expr::VarRead { ty: _, var } => {
-                let var = self
-                    .unit
-                    .lookup_var(&var)
-                    .expect("Variable did not exist, program is in a bad state.");
-                match &var.kind {
-                    hir::VarKind::Local => self.lookup_var(&var.id),
-                    hir::VarKind::Global => format!("hkv_{}", var.name),
-                    hir::VarKind::Param => format!("hkp_{}", var.name),
-                }
-            }
+            hir::Expr::VarRead { ty: _, var } => self.lookup_var_read(var),
 
             // A function call
             hir::Expr::Call { fun, ty: _, args } => {
@@ -233,14 +254,18 @@ impl<'a> PyFunBuilder<'a> {
             } => {
                 let assi = self.expr_to_str(expr);
                 let sco = self.expr_to_str(scope);
+                let vset = self.lookup_var_set(var, assi);
 
-                let name = self.lookup_var(var);
-
-                format!("[{name}:={assi},{sco}][1]")
+                format!("[{vset},{sco}][1]")
             }
 
             // A conditional expression
-            hir::Expr::Branch { ty: _, cond, ontrue, onfalse } => {
+            hir::Expr::Branch {
+                ty: _,
+                cond,
+                ontrue,
+                onfalse,
+            } => {
                 let cond = self.expr_to_str(cond);
                 let ontrue = self.expr_to_str(ontrue);
                 let onfalse = self.expr_to_str(onfalse);
@@ -257,37 +282,19 @@ impl<'a> PyFunBuilder<'a> {
 
             // A reassignment (destructive assignment)
             hir::Expr::Reassign { ty: _, var, expr } => {
-                let var = self
-                    .unit
-                    .lookup_var(&var)
-                    .expect("Variable did not exist, program is in a bad state.");
-                let name = match &var.kind {
-                    hir::VarKind::Local => self.lookup_var(&var.id),
-                    hir::VarKind::Global => format!("hkv_{}", var.name),
-                    hir::VarKind::Param => format!("hkp_{}", var.name),
-                };
-
                 let body = self.expr_to_str(expr);
+                let assi = self.lookup_var_set(var, body);
+                let get = self.lookup_var_read(var);
 
-                format!("({name}:=({body}))")
+                format!("[{assi},{get}][1]")
             }
         }
     }
 
     fn write_expr(&mut self, expr: &hir::Expr) {
         // The root element of the function
-        match expr {
-            hir::Expr::ImplicitCast { ty: _, expr } => self.write_expr(&expr),
-            hir::Expr::Block { ty: _, insts } => {
-                for inst in insts {
-                    self.write_expr(inst);
-                }
-            }
-            ex => {
-                let ex = self.expr_to_str(&ex);
-                self.pf.code.push(ex)
-            }
-        }
+        let res = self.expr_to_str(expr);
+        self.pf.code.push(res);
     }
 }
 
@@ -327,10 +334,6 @@ impl Emitter {
                     .join(","),
                 fun.ret
             ));
-
-            if fun.code.len() == 0 {
-                outp.push(" pass".into());
-            }
 
             for (i, line) in fun.code.iter().enumerate() {
                 if i == fun.code.len() - 1 {
