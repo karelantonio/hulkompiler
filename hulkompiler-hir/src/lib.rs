@@ -740,29 +740,29 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn to_op(&self, op: &ast::BinOp) -> Op {
+    fn to_op(&self, op: &ast::expr::BinOp) -> Op {
         match op {
-            ast::BinOp::Add => Op::Add,
-            ast::BinOp::Sub => Op::Sub,
-            ast::BinOp::Mult => Op::Mul,
-            ast::BinOp::Div => Op::Div,
-            ast::BinOp::Pwr => Op::Pow,
-            ast::BinOp::Cat => Op::Cat,
-            ast::BinOp::Le => Op::Le,
-            ast::BinOp::Ge => Op::Ge,
-            ast::BinOp::Lt => Op::Lt,
-            ast::BinOp::Gt => Op::Gt,
-            ast::BinOp::Eq => Op::Eq,
-            ast::BinOp::Neq => Op::Neq,
-            ast::BinOp::And => Op::And,
-            ast::BinOp::Or => Op::Or,
+            ast::expr::BinOp::Add => Op::Add,
+            ast::expr::BinOp::Sub => Op::Sub,
+            ast::expr::BinOp::Mult => Op::Mul,
+            ast::expr::BinOp::Div => Op::Div,
+            ast::expr::BinOp::Pwr => Op::Pow,
+            ast::expr::BinOp::Cat => Op::Cat,
+            ast::expr::BinOp::Le => Op::Le,
+            ast::expr::BinOp::Ge => Op::Ge,
+            ast::expr::BinOp::Lt => Op::Lt,
+            ast::expr::BinOp::Gt => Op::Gt,
+            ast::expr::BinOp::Eq => Op::Eq,
+            ast::expr::BinOp::Neq => Op::Neq,
+            ast::expr::BinOp::And => Op::And,
+            ast::expr::BinOp::Or => Op::Or,
         }
     }
 
-    fn to_unary_op(&self, op: &ast::UnaryOp) -> UOp {
+    fn to_unary_op(&self, op: &ast::expr::UnaryOp) -> UOp {
         match op {
-            ast::UnaryOp::Neg => UOp::Neg,
-            ast::UnaryOp::Not => UOp::Not,
+            ast::expr::UnaryOp::Neg => UOp::Neg,
+            ast::expr::UnaryOp::Not => UOp::Not,
         }
     }
 
@@ -798,24 +798,24 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn to_expr(&mut self, expr: &ast::Expr) -> TResult<Expr> {
+    fn to_expr(&mut self, expr: &ast::expr::Expr) -> TResult<Expr> {
         Ok(match expr {
-            ast::Expr::Num(_, v) => Expr::Const {
+            ast::expr::Expr::Num(_, v) => Expr::Const {
                 ty: Ty::Num,
                 cons: self.push_const_num(*v),
             },
 
-            ast::Expr::Str(_, v) => Expr::Const {
+            ast::expr::Expr::Str(_, v) => Expr::Const {
                 ty: Ty::Str,
                 cons: self.push_const_str(&v),
             },
 
-            ast::Expr::Boolean(_, v) => Expr::Const {
+            ast::expr::Expr::Boolean(_, v) => Expr::Const {
                 ty: Ty::Bool,
                 cons: self.get_boolean_const(*v),
             },
 
-            ast::Expr::BinOpExpr(binop) => {
+            ast::expr::Expr::BinOpExpr(binop) => {
                 let op = self.to_op(&binop.op);
                 let left = self.to_expr(&binop.left)?;
                 let right = self.to_expr(&binop.right)?;
@@ -840,7 +840,7 @@ impl TypeChecker {
                 }
             }
 
-            ast::Expr::UnaryOpExpr(crate::ast::UnaryOpExpr { loc, op, expr }) => {
+            ast::expr::Expr::UnaryOpExpr(ast::expr::UnaryOpExpr { loc, op, expr }) => {
                 let op = self.to_unary_op(&op);
                 let expr = self.to_expr(expr)?;
 
@@ -853,7 +853,7 @@ impl TypeChecker {
                 }
             }
 
-            ast::Expr::FunCallExpr(fun) => {
+            ast::expr::Expr::FunCallExpr(fun) => {
                 // Check if the function exists
                 let FunId(funid) = self
                     .reverse_fun
@@ -917,7 +917,7 @@ impl TypeChecker {
                 }
             }
 
-            ast::Expr::BlockExpr(crate::ast::BlockExpr { exprs, .. }) => {
+            ast::expr::Expr::BlockExpr(ast::expr::BlockExpr { exprs, .. }) => {
                 // Map each of these
                 let instrs = exprs
                     .iter()
@@ -930,7 +930,7 @@ impl TypeChecker {
                 }
             }
 
-            ast::Expr::Id(loc, name) => {
+            ast::expr::Expr::Id(loc, name) => {
                 let VarId(vid) =
                     self.scope
                         .reverse_vars
@@ -947,7 +947,7 @@ impl TypeChecker {
                 }
             }
 
-            ast::Expr::VarDeclExpr(crate::ast::VarDeclExpr {
+            ast::expr::Expr::VarDeclExpr(ast::expr::VarDeclExpr {
                 expr,
                 scope,
                 name,
@@ -1005,7 +1005,7 @@ impl TypeChecker {
                 }
             }
 
-            ast::Expr::IfExpr(crate::ast::IfExpr {
+            ast::expr::Expr::IfExpr(ast::expr::IfExpr {
                 loc,
                 ifarm,
                 elsearm,
@@ -1048,7 +1048,7 @@ impl TypeChecker {
                 }
             }
 
-            ast::Expr::WhileExpr(crate::ast::WhileExpr { body, cond, loc }) => {
+            ast::expr::Expr::WhileExpr(ast::expr::WhileExpr { body, cond, loc }) => {
                 let cond = self.to_expr(cond)?;
 
                 if cond.ty() != Ty::Bool {
@@ -1066,7 +1066,7 @@ impl TypeChecker {
                 }
             }
 
-            ast::Expr::Reassign(crate::ast::Reassign { expr, name, loc }) => {
+            ast::expr::Expr::Reassign(ast::expr::Reassign { expr, name, loc }) => {
                 let var = *self.scope.reverse_vars.get(name).ok_or(
                     TypeError::ReassignVarDoesNotExist {
                         name: name.into(),
