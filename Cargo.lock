@@ -70,25 +70,43 @@ name = "hulkompiler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "logos",
+ "hulkompiler-ast",
+ "hulkompiler-emit-py",
+ "hulkompiler-hir",
  "thiserror",
 ]
 
 [[package]]
 name = "hulkompiler-ast"
 version = "0.1.0"
+dependencies = [
+ "hulkompiler-sourcehint",
+ "logos",
+ "thiserror",
+]
 
 [[package]]
 name = "hulkompiler-emit-py"
 version = "0.1.0"
+dependencies = [
+ "hulkompiler-hir",
+]
 
 [[package]]
 name = "hulkompiler-hir"
 version = "0.1.0"
+dependencies = [
+ "hulkompiler-ast",
+ "hulkompiler-sourcehint",
+ "thiserror",
+]
 
 [[package]]
 name = "hulkompiler-sourcehint"
 version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
 
 [[package]]
 name = "lazy_static"

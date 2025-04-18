@@ -1,6 +1,9 @@
 //! Parse module: transform a list of tokens into higher-level language structures
 
-use crate::lex::{Addr, LexError, Tk};
+pub mod lex;
+
+use hulkompiler_sourcehint::{LocError, make};
+use lex::{Addr, LexError, Tk};
 use std::{borrow::Cow, rc::Rc};
 use thiserror::Error;
 
@@ -190,7 +193,7 @@ pub enum ParseError {
     #[error("Unexpected token {} ({tok:?}), expecting one of: {}", tok.to_string(), expected.into_iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))]
     Unexpected {
         #[source]
-        addr: crate::sourcehint::LocError,
+        addr: LocError,
         tok: Tk, // to make the borrow checker happy :)
         value: String,
         expected: Vec<Tk>,
@@ -202,7 +205,7 @@ pub enum ParseError {
     #[error("Could not parse number {value}: {err}")]
     ParseNum {
         #[source]
-        loc: crate::sourcehint::LocError,
+        loc: LocError,
         err: std::num::ParseFloatError,
         value: String,
     },
@@ -268,8 +271,8 @@ impl<'a> Parser<'a> {
         &self.end[self.ptr - 1] // Ok to panic, should alread have parsed some token
     }
 
-    fn make_loc_error(&self, start: &Addr, end: &Addr) -> crate::sourcehint::LocError {
-        crate::sourcehint::make(&self.text, start, end)
+    fn make_loc_error(&self, start: &Addr, end: &Addr) -> LocError {
+        make(&self.text, start.line, start.col, end.line, end.col)
     }
 
     fn remaining(&self) -> &[Tk] {
@@ -280,7 +283,7 @@ impl<'a> Parser<'a> {
         if let Some(tok) = self.data.get(self.ptr) {
             let (start, end) = (self.start[self.ptr].clone(), self.end[self.ptr].clone());
             ParseError::Unexpected {
-                addr: crate::sourcehint::make(&self.text, &start, &end),
+                addr: make(&self.text, start.line, start.col, end.line, end.col),
                 expected: exp.into(),
                 tok: tok.clone(),
                 value: self.slices[self.ptr].into(),

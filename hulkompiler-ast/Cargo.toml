@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+logos = "0.15.0"
+thiserror = "2.0.8"
+hulkompiler-sourcehint = { path = "../hulkompiler-sourcehint", version = "0.1.0" }

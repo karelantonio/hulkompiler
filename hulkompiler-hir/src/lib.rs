@@ -1,10 +1,9 @@
 //! The high-level intermediate representation of the language
 //! Makes easy the type-checking phase :)
 
-use crate::{
-    ast::Loc,
-    sourcehint::{make, LocError},
-};
+use hulkompiler_ast as ast;
+use hulkompiler_ast::Loc;
+use hulkompiler_sourcehint::{make, LocError};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -183,7 +182,7 @@ pub struct FunId(usize);
 pub struct VarId(usize);
 
 impl VarId {
-    pub(crate) fn id(&self) -> usize {
+    pub fn id(&self) -> usize {
         self.0
     }
 }
@@ -578,7 +577,7 @@ impl TypeChecker {
     }
 
     fn make_loc_err(&self, loc: &Loc) -> LocError {
-        make(&loc.content, &loc.start, &loc.end)
+        make(&loc.content, loc.start.line, loc.start.col, loc.end.line, loc.end.col)
     }
 
     /// Check if can apply the given operator to these expressions
@@ -639,7 +638,7 @@ impl TypeChecker {
     }
 
     /// Transform the given expresion to the given unit
-    pub fn transform(ast: &[crate::ast::RootElem]) -> TResult<Unit> {
+    pub fn transform(ast: &[ast::RootElem]) -> TResult<Unit> {
         // Transform this expr to our expr
         let mut tr = Self::default();
         tr.push_boolean_constants();
@@ -668,7 +667,7 @@ impl TypeChecker {
 
         // Now create the functions
         for elem in ast {
-            let crate::ast::RootElem::FunDecl(fun) = elem else {
+            let ast::RootElem::FunDecl(fun) = elem else {
                 continue;
             };
 
@@ -679,7 +678,7 @@ impl TypeChecker {
         let mut glob = None;
 
         for elem in ast {
-            let crate::ast::RootElem::Statement(expr) = elem else {
+            let ast::RootElem::Statement(expr) = elem else {
                 continue;
             };
 
@@ -701,9 +700,9 @@ impl TypeChecker {
         })
     }
 
-    fn create_fun_stubs(&mut self, ast: &[crate::ast::RootElem]) -> TResult<()> {
+    fn create_fun_stubs(&mut self, ast: &[ast::RootElem]) -> TResult<()> {
         for elem in ast {
-            let crate::ast::RootElem::FunDecl(fun) = elem else {
+            let ast::RootElem::FunDecl(fun) = elem else {
                 continue;
             };
             // The args
@@ -741,33 +740,33 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn to_op(&self, op: &crate::ast::BinOp) -> Op {
+    fn to_op(&self, op: &ast::BinOp) -> Op {
         match op {
-            crate::ast::BinOp::Add => Op::Add,
-            crate::ast::BinOp::Sub => Op::Sub,
-            crate::ast::BinOp::Mult => Op::Mul,
-            crate::ast::BinOp::Div => Op::Div,
-            crate::ast::BinOp::Pwr => Op::Pow,
-            crate::ast::BinOp::Cat => Op::Cat,
-            crate::ast::BinOp::Le => Op::Le,
-            crate::ast::BinOp::Ge => Op::Ge,
-            crate::ast::BinOp::Lt => Op::Lt,
-            crate::ast::BinOp::Gt => Op::Gt,
-            crate::ast::BinOp::Eq => Op::Eq,
-            crate::ast::BinOp::Neq => Op::Neq,
-            crate::ast::BinOp::And => Op::And,
-            crate::ast::BinOp::Or => Op::Or,
+            ast::BinOp::Add => Op::Add,
+            ast::BinOp::Sub => Op::Sub,
+            ast::BinOp::Mult => Op::Mul,
+            ast::BinOp::Div => Op::Div,
+            ast::BinOp::Pwr => Op::Pow,
+            ast::BinOp::Cat => Op::Cat,
+            ast::BinOp::Le => Op::Le,
+            ast::BinOp::Ge => Op::Ge,
+            ast::BinOp::Lt => Op::Lt,
+            ast::BinOp::Gt => Op::Gt,
+            ast::BinOp::Eq => Op::Eq,
+            ast::BinOp::Neq => Op::Neq,
+            ast::BinOp::And => Op::And,
+            ast::BinOp::Or => Op::Or,
         }
     }
 
-    fn to_unary_op(&self, op: &crate::ast::UnaryOp) -> UOp {
+    fn to_unary_op(&self, op: &ast::UnaryOp) -> UOp {
         match op {
-            crate::ast::UnaryOp::Neg => UOp::Neg,
-            crate::ast::UnaryOp::Not => UOp::Not,
+            ast::UnaryOp::Neg => UOp::Neg,
+            ast::UnaryOp::Not => UOp::Not,
         }
     }
 
-    fn process_fn(&mut self, fun: &crate::ast::FunDecl) -> TResult<()> {
+    fn process_fn(&mut self, fun: &ast::FunDecl) -> TResult<()> {
         // Check is not already defined (no stub)
         let FunId(fid) = self.reverse_fun[&fun.name]; // Its ok to panic, because we actually EXPECT
                                                       // fun.name to be a stub
@@ -799,24 +798,24 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn to_expr(&mut self, expr: &crate::ast::Expr) -> TResult<Expr> {
+    fn to_expr(&mut self, expr: &ast::Expr) -> TResult<Expr> {
         Ok(match expr {
-            crate::ast::Expr::Num(_, v) => Expr::Const {
+            ast::Expr::Num(_, v) => Expr::Const {
                 ty: Ty::Num,
                 cons: self.push_const_num(*v),
             },
 
-            crate::ast::Expr::Str(_, v) => Expr::Const {
+            ast::Expr::Str(_, v) => Expr::Const {
                 ty: Ty::Str,
                 cons: self.push_const_str(&v),
             },
 
-            crate::ast::Expr::Boolean(_, v) => Expr::Const {
+            ast::Expr::Boolean(_, v) => Expr::Const {
                 ty: Ty::Bool,
                 cons: self.get_boolean_const(*v),
             },
 
-            crate::ast::Expr::BinOpExpr(binop) => {
+            ast::Expr::BinOpExpr(binop) => {
                 let op = self.to_op(&binop.op);
                 let left = self.to_expr(&binop.left)?;
                 let right = self.to_expr(&binop.right)?;
@@ -841,7 +840,7 @@ impl TypeChecker {
                 }
             }
 
-            crate::ast::Expr::UnaryOpExpr(crate::ast::UnaryOpExpr { loc, op, expr }) => {
+            ast::Expr::UnaryOpExpr(crate::ast::UnaryOpExpr { loc, op, expr }) => {
                 let op = self.to_unary_op(&op);
                 let expr = self.to_expr(expr)?;
 
@@ -854,7 +853,7 @@ impl TypeChecker {
                 }
             }
 
-            crate::ast::Expr::FunCallExpr(fun) => {
+            ast::Expr::FunCallExpr(fun) => {
                 // Check if the function exists
                 let FunId(funid) = self
                     .reverse_fun
@@ -918,7 +917,7 @@ impl TypeChecker {
                 }
             }
 
-            crate::ast::Expr::BlockExpr(crate::ast::BlockExpr { exprs, .. }) => {
+            ast::Expr::BlockExpr(crate::ast::BlockExpr { exprs, .. }) => {
                 // Map each of these
                 let instrs = exprs
                     .iter()
@@ -931,7 +930,7 @@ impl TypeChecker {
                 }
             }
 
-            crate::ast::Expr::Id(loc, name) => {
+            ast::Expr::Id(loc, name) => {
                 let VarId(vid) =
                     self.scope
                         .reverse_vars
@@ -948,7 +947,7 @@ impl TypeChecker {
                 }
             }
 
-            crate::ast::Expr::VarDeclExpr(crate::ast::VarDeclExpr {
+            ast::Expr::VarDeclExpr(crate::ast::VarDeclExpr {
                 expr,
                 scope,
                 name,
@@ -1006,7 +1005,7 @@ impl TypeChecker {
                 }
             }
 
-            crate::ast::Expr::IfExpr(crate::ast::IfExpr {
+            ast::Expr::IfExpr(crate::ast::IfExpr {
                 loc,
                 ifarm,
                 elsearm,
@@ -1049,7 +1048,7 @@ impl TypeChecker {
                 }
             }
 
-            crate::ast::Expr::WhileExpr(crate::ast::WhileExpr { body, cond, loc }) => {
+            ast::Expr::WhileExpr(crate::ast::WhileExpr { body, cond, loc }) => {
                 let cond = self.to_expr(cond)?;
 
                 if cond.ty() != Ty::Bool {
@@ -1067,7 +1066,7 @@ impl TypeChecker {
                 }
             }
 
-            crate::ast::Expr::Reassign(crate::ast::Reassign { expr, name, loc }) => {
+            ast::Expr::Reassign(crate::ast::Reassign { expr, name, loc }) => {
                 let var = *self.scope.reverse_vars.get(name).ok_or(
                     TypeError::ReassignVarDoesNotExist {
                         name: name.into(),

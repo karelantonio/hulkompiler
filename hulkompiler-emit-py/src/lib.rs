@@ -1,6 +1,6 @@
 //! Transpile HULK to python (3)
 
-use crate::hir;
+use hulkompiler_hir as hir;
 use std::collections::BTreeMap;
 
 const STD: &[&str] = &[

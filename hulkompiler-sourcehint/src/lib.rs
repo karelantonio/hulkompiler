@@ -18,20 +18,22 @@ fn make_highlight_range(start: usize, end: usize) -> String {
 
 fn make_highlight(
     lineno: usize,
-    start: &crate::lex::Addr,
-    end: &crate::lex::Addr,
+    start_line: usize,
+    start_col: usize,
+    end_line: usize,
+    end_col: usize,
     line: &str,
 ) -> Option<String> {
-    if lineno < start.line || lineno > end.line {
+    if lineno < start_line || lineno > end_line {
         return None;
     }
 
-    if lineno == start.line && lineno == end.line {
-        Some(make_highlight_range(start.col, end.col))
-    } else if lineno == start.line {
-        Some(make_highlight_range(start.col, line.len()))
-    } else if lineno == end.line {
-        Some(make_highlight_range(1, end.col))
+    if lineno == start_line && lineno == end_line {
+        Some(make_highlight_range(start_col, end_col))
+    } else if lineno == start_line {
+        Some(make_highlight_range(start_col, line.len()))
+    } else if lineno == end_line {
+        Some(make_highlight_range(1, end_col))
     } else {
         Some(make_highlight_range(1, line.len()))
     }
@@ -51,15 +53,15 @@ pub fn space_shift(num: usize) -> &'static str {
     }
 }
 
-pub fn make(text: &[String], start: &crate::lex::Addr, end: &crate::lex::Addr) -> LocError {
+pub fn make(text: &[String], start_line: usize, start_col: usize, end_line: usize, end_col: usize) -> LocError {
     let mut res = Vec::new();
-    let mut lineno = start.line.max(3) - 2;
+    let mut lineno = start_line.max(3) - 2;
 
-    for line in &text[start.line.max(3) - 3..(end.line + 2).min(text.len())] {
+    for line in &text[start_line.max(3) - 3..(end_line + 2).min(text.len())] {
         res.push(format!("{lineno:2}|{line}"));
 
         // Make highlight
-        if let Some(hi) = make_highlight(lineno, start, end, &line) {
+        if let Some(hi) = make_highlight(lineno, start_line, start_col, end_line, end_col, &line) {
             res.push(format!("{} {hi}", space_shift(lineno)));
         }
 

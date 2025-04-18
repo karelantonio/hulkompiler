@@ -4,6 +4,9 @@ use std::{
     ffi::OsStr,
     path::Path,
 };
+use hulkompiler_emit_py as emit_py;
+use hulkompiler_ast as ast;
+use hulkompiler_hir as hir;
 
 /// An argument
 pub struct Arg {
@@ -216,7 +219,7 @@ fn cmd_dumplex(binname: &str, args: Args) -> Result<()> {
     let data = std::fs::read_to_string(file)?;
 
     // Lex the contents
-    let res = hulkompiler::lex::tokenize_data(&data)?;
+    let res = ast::lex::tokenize_data(&data)?;
     println!("Result:");
     if wide {
         println!("{res:#?}");
@@ -251,7 +254,7 @@ fn cmd_dumpast(binname: &str, args: Args) -> Result<()> {
     let content = std::fs::read_to_string(file)?;
 
     // Parse
-    let res = hulkompiler::ast::Parser::parse(&content)?;
+    let res = ast::Parser::parse(&content)?;
 
     println!("Result:");
     if wide {
@@ -280,13 +283,13 @@ fn cmd_emitpy(binname: &str, args: Args) -> Result<()> {
     let content = std::fs::read_to_string(&file)?;
 
     // Parse
-    let ast = hulkompiler::ast::Parser::parse(&content)?;
+    let ast = ast::Parser::parse(&content)?;
 
     // Transform
-    let tr = hulkompiler::hir::TypeChecker::transform(&ast)?;
+    let tr = hir::TypeChecker::transform(&ast)?;
 
     // Emit Py
-    println!("{}", hulkompiler::emit::py::Emitter::emit(&tr));
+    println!("{}", emit_py::Emitter::emit(&tr));
 
     Ok(())
 }
