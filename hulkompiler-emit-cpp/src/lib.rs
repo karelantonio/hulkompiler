@@ -122,7 +122,6 @@ impl<'a> Emitter<'a> {
 
     /// Emit an expression and return in which variable the result is (r_<RETURN>)
     fn emit_expr(&mut self, scope: &mut ScopeBuilder, expr: &hir::expr::Expr) -> usize {
-        let res = self.alloc_var();
         let ex = match &expr {
             // A constant
             hir::expr::Expr::Const { cons, ty: _ } => {
@@ -141,7 +140,9 @@ impl<'a> Emitter<'a> {
 
             // An implicit cast
             hir::expr::Expr::ImplicitCast { ty: _, expr } => {
-                format!("v_{}", self.emit_expr(scope, expr))
+                // Actually, we dont need to create a new variable
+                //format!("v_{}", self.emit_expr(scope, expr))
+                return self.emit_expr(scope, expr);
             }
 
             // A variable read
@@ -171,6 +172,7 @@ impl<'a> Emitter<'a> {
 
             _ => panic!("Dont know how to process {expr:?}"),
         };
+        let res = self.alloc_var();
         let ty = self.ty_to_str(&expr.ty());
         scope
             .outp
