@@ -3,10 +3,20 @@
 use thiserror::Error;
 
 /// A source code hint (show the code that produces the error)
+/// The error may look like this:
+/// ```text
+///    Lines:
+///     2| function hello() => 1;
+///        ~~~~~~~~~~~~~~~~
+/// ```
+/// See [`make`], [`make_highlight_range`], [`make_highlight`]
 #[derive(Debug, Error)]
 #[error("Lines:\n{0}")]
 pub struct LocError(pub String);
 
+
+/// Create a highlight used in the error message, a highlight is just a group of ~~~~~ representing
+/// an underscore.
 fn make_highlight_range(start: usize, end: usize) -> String {
     return String::from_utf8(
         (0..end + 1)
@@ -16,6 +26,8 @@ fn make_highlight_range(start: usize, end: usize) -> String {
     .expect("This should be valid utf8");
 }
 
+/// Creates the highlight if is inside the given range of lines. Also highlights only the segment
+/// between the given columns, not just the entire line.
 fn make_highlight(
     lineno: usize,
     start_line: usize,
@@ -39,6 +51,7 @@ fn make_highlight(
     }
 }
 
+/// Creates the left shift in the code, like an editor.
 pub fn space_shift(num: usize) -> &'static str {
     if num < 100 {
         "  "
@@ -53,6 +66,9 @@ pub fn space_shift(num: usize) -> &'static str {
     }
 }
 
+/// Create a new [`LocError`] with the given text and range. A [`LocError`] is a way to inform a
+/// user in a more interesting way, where the error is located, and not just give a plain: In line
+/// XX, column XX. The lines and columns should start from 1, not 0
 pub fn make(text: &[String], start_line: usize, start_col: usize, end_line: usize, end_col: usize) -> LocError {
     let mut res = Vec::new();
     let mut lineno = start_line.max(3) - 2;
