@@ -8,4 +8,5 @@ anyhow = { version = "1.0.95", features = ["backtrace"] }
 hulkompiler-ast = { path = "../hulkompiler-ast", version = "0.1.0" }
 hulkompiler-hir = { path = "../hulkompiler-hir", version = "0.1.0" }
 hulkompiler-emit-py = { path = "../hulkompiler-emit-py", version = "0.1.0" }
+hulkompiler-emit-cpp = { path = "../hulkompiler-emit-cpp", version = "0.1.0" }
 thiserror = "2.0.8"

@@ -71,6 +71,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hulkompiler-ast",
+ "hulkompiler-emit-cpp",
  "hulkompiler-emit-py",
  "hulkompiler-hir",
  "thiserror",
@@ -83,6 +84,13 @@ dependencies = [
  "hulkompiler-sourcehint",
  "logos",
  "thiserror",
+]
+
+[[package]]
+name = "hulkompiler-emit-cpp"
+version = "0.1.0"
+dependencies = [
+ "hulkompiler-hir",
 ]
 
 [[package]]

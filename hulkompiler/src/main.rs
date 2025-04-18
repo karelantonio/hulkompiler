@@ -12,6 +12,7 @@ use std::{
 use hulkompiler_emit_py as emit_py;
 use hulkompiler_ast as ast;
 use hulkompiler_hir as hir;
+use hulkompiler_emit_cpp as emit_cpp;
 
 
 /// Dump the lex result
@@ -113,6 +114,34 @@ fn cmd_emitpy(binname: &str, args: Args) -> Result<()> {
     Ok(())
 }
 
+fn cmd_emitcpp(binname: &str, args: Args) -> Result<()> {
+    let mut file = None;
+
+    let mut parser = ArgParser::new(binname, Some("emit-cpp"), None);
+    let _p_file = parser.push_value("file", Some("The source file"));
+    parser.feed(args);
+
+    while let Some((_arg, val)) = parser.next()? {
+        file = Some(val);
+    }
+
+    let file = file.expect("Should not be None, see ArgParser"); // Its ok
+
+    // Read the contents
+    let content = std::fs::read_to_string(&file)?;
+
+    // Parse
+    let ast = ast::Parser::parse(&content)?;
+
+    // Transform
+    let tr = hir::TypeChecker::transform(&ast)?;
+
+    // Emit Py
+    println!("{}", emit_cpp::Emitter::emit(&tr));
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     // Parse the args
     let mut args = args();
@@ -130,7 +159,7 @@ fn main() -> Result<()> {
     let mut parser = ArgParser::new(&binname, None, None);
     let _opt_cmd = parser.push_value(
         "command",
-        Some("Must be one of: emit-py, dump-ast, or dump-lex"),
+        Some("Must be one of: emit-cpp, emit-py, dump-ast, or dump-lex"),
     );
     parser.feed(args);
 
@@ -142,6 +171,8 @@ fn main() -> Result<()> {
             return cmd_dumpast(&binname, parser.done()?);
         } else if val == "emit-py" {
             return cmd_emitpy(&binname, parser.done()?);
+        } else if val == "emit-cpp" {
+            return cmd_emitcpp(&binname, parser.done()?);
         } else {
             bail!("Unknown command: {val}");
         }
