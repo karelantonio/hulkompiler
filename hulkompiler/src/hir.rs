@@ -460,6 +460,13 @@ pub enum TypeError {
 
     #[error("Reassigned value does not conform the variable's original type ({expr:?} cannot be interpreted as {vart:?})")]
     ReassignDoesNotConform { expr: Ty, vart: Ty, loc: LocError },
+    
+    #[error("Cannot re-assign the value of a global variable, these are like constants. Try shadowing it with a variable with the same name")]
+    ReassignGlobal {
+        #[source]
+        loc: LocError,
+    },
+
 }
 
 type TResult<T> = Result<T, TypeError>;
@@ -1067,6 +1074,14 @@ impl TypeChecker {
                         loc: self.make_loc_err(loc),
                     },
                 )?;
+
+                let vk = self.scope.vars[var.0].kind.clone();
+
+                if matches!(vk, VarKind::Global) {
+                    return Err(TypeError::ReassignGlobal {
+                        loc: self.make_loc_err(loc),
+                    });
+                }
 
                 // Lookup the variable type
                 let vt = self.scope.vars[var.0].ty;

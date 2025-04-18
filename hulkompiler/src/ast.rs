@@ -187,7 +187,7 @@ pub enum ParseError {
     #[error("Could not tokenize the data")]
     Lexing(#[from] LexError),
 
-    #[error("Unexpected token {tok:?}, expecting one of: {}", expected.into_iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))]
+    #[error("Unexpected token {} ({tok:?}), expecting one of: {}", tok.to_string(), expected.into_iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))]
     Unexpected {
         #[source]
         addr: crate::sourcehint::LocError,
