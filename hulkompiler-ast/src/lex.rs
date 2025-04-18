@@ -1,15 +1,18 @@
 //! Split the input data into tokens
 use logos::Logos;
 use thiserror::Error;
+use hulkompiler_sourcehint::{LocError, make};
 
-/// Error lexing
+/// Error lexing, usually an unexpected token. It uses [`hulkompiler_sourcehint`] to make pretty
+/// error messages.
 #[derive(Error, Debug)]
 pub enum LexError {
-    #[error("Unexpected char at line: {line}, column: {col} (near ...{hint}...)")]
+    #[error("Unexpected char at line: {line}, column: {col}")]
     Unexpected {
         line: usize,
         col: usize,
-        hint: String,
+        #[source]
+        loc: LocError,
     },
 }
 
@@ -184,12 +187,14 @@ impl core::fmt::Display for Tk {
     }
 }
 
+/// Address in the source file, lines and columns should start at 1, not 0.
 #[derive(Debug, Clone, Copy)]
 pub struct Addr {
     pub line: usize,
     pub col: usize,
 }
 
+/// A token with its address in the source associated.
 #[derive(Debug, Clone, Copy)]
 pub struct LocTk<'a> {
     pub start: Addr,
@@ -198,22 +203,37 @@ pub struct LocTk<'a> {
     pub tk: Tk,
 }
 
-/// Tokenize the data and report any error found, return a list of: (line, token, slice)
+
+fn make_loc_err(lines: Vec<String>, line: usize, sc: usize, ec: usize) -> LocError {
+    make(&lines, line, sc, line, ec)
+}
+
+
+/// Tokenize the data and report any error found, return a list of [`LocTk`]
 pub fn tokenize_data<'a>(data: &'a str) -> Result<Vec<LocTk<'a>>, LexError> {
+
     let mut tk = Tk::lexer(data);
     let mut res = Vec::new();
     let (mut line, mut prevlen) = (1usize, 0usize);
 
     while let Some(tok) = tk.next() {
         let Ok(tok) = tok else {
+            // Clone the data, for the LocError
+            let lines = data.split("\n").map(|e| e.to_string()).collect();
+
+            // Start and end column (starting from 1)
+            let startcol = tk.span().start - prevlen;
+            let endcol = tk.span().end - 1 - prevlen;
+
             return Err(LexError::Unexpected {
                 line,
                 col: tk.span().start - prevlen + 1,
-                hint: tk.slice().into(),
+                loc: make_loc_err(lines, line, startcol, endcol),
             });
         };
 
         if let Tk::Nl = tok {
+            // Dont include new lines, just increment the line counter
             line += 1;
             prevlen = tk.span().end - 1;
             continue;
