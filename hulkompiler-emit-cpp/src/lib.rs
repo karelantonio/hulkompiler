@@ -302,6 +302,38 @@ impl<'a> Emitter<'a> {
                 }
             }
 
+            // Variables
+            hir::expr::Expr::VarDecl {
+                ty,
+                expr,
+                scope: sc,
+                var,
+            } => {
+                let var = self
+                    .unit
+                    .lookup_var(var)
+                    .expect("Variable not found, program in a bad state");
+                let vname = match var.kind {
+                    hir::expr::VarKind::Local => format!("l_{}", var.id.id()),
+                    hir::expr::VarKind::Param => format!("hkp_{}", var.name),
+                    hir::expr::VarKind::Global => format!("hkv_{}", var.name),
+                };
+                let ty = self.ty_to_str(ty).to_string();
+                let mut newsc = self.alloc_scope();
+                let res = self.emit_expr(&mut newsc, expr);
+                res.add_if_free(&mut newsc);
+                newsc.outp.push(Instruction::Line(format!(
+                    "  shp<{ty}> {vname} = v_{};",
+                    res.name
+                )));
+                // Now the scope
+                let res = self.emit_expr(&mut newsc, sc);
+                res.add_if_free(&mut newsc);
+                scope.outp.push(Instruction::Scope(newsc));
+
+                return res;
+            }
+
             // Other binary operator
             _ => panic!("Dont know how to process {expr:?}"),
         };
