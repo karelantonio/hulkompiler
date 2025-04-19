@@ -16,16 +16,16 @@ pub mod unit;
 /// The types
 pub mod ty;
 
+use crate::{
+    expr::{Const, ConstId, ConstValue, Expr, Fun, FunArg, FunBody, FunId, VarId, VarKind},
+    ops::{Op, UOp},
+    scope::Scope,
+    ty::Ty,
+    unit::Unit,
+};
 use hulkompiler_ast as ast;
 use hulkompiler_ast::Loc;
 use hulkompiler_sourcehint::{make, LocError};
-use crate::{
-    ops::{Op, UOp},
-    unit::Unit,
-    ty::Ty,
-    expr::{VarId, VarKind, Expr, FunBody, FunId, FunArg, Fun, Const, ConstId, ConstValue},
-    scope::Scope,
-};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -160,13 +160,12 @@ pub enum TypeError {
 
     #[error("Reassigned value does not conform the variable's original type ({expr:?} cannot be interpreted as {vart:?})")]
     ReassignDoesNotConform { expr: Ty, vart: Ty, loc: LocError },
-    
+
     #[error("Cannot re-assign the value of a global variable, these are like constants. Try shadowing it with a variable with the same name")]
     ReassignGlobal {
         #[source]
         loc: LocError,
     },
-
 }
 
 type TResult<T> = Result<T, TypeError>;
@@ -278,7 +277,13 @@ impl TypeChecker {
     }
 
     fn make_loc_err(&self, loc: &Loc) -> LocError {
-        make(&loc.content, loc.start.line, loc.start.col, loc.end.line, loc.end.col)
+        make(
+            &loc.content,
+            loc.start.line,
+            loc.start.col,
+            loc.end.line,
+            loc.end.col,
+        )
     }
 
     /// Check if can apply the given operator to these expressions
@@ -486,6 +491,22 @@ impl TypeChecker {
 
         // Transform the function body
         let body = self.to_expr(&fun.body)?;
+        let ret = fun
+            .ret
+            .as_ref()
+            .map(|e| e.as_str())
+            .expect("This should not panic");
+        let ret = self
+            .str_to_ty(ret)
+            .expect("This should not panic, we already lookup the type");
+
+        if !self.ty_conforms(&body.ty(), &ret) {
+            return Err(TypeError::FnRetMismatch {
+                ret: format!("{:?}", ret),
+                bod: format!("{:?}", &body.ty()),
+                loc: self.make_loc_err(&fun.loc),
+            });
+        }
 
         // Undo (maybe drop?)
         for _ in 0..self.funpool[fid].args.len() {
@@ -770,7 +791,7 @@ impl TypeChecker {
 
                 Expr::Loop {
                     ty: Ty::Obj, // Because we may not run the loop, so we need to ensure that a value is assigned
-                                 // to the return
+                    // to the return
                     cond: Box::new(cond),
                     body: Box::new(body),
                 }
