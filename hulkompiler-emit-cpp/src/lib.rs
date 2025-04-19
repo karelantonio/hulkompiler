@@ -155,11 +155,18 @@ impl<'a> Emitter<'a> {
                     .lookup_const(cons)
                     .expect("Program is in a bad state");
                 match &cons.value {
-                    hir::expr::ConstValue::Num(num) => format!("std::make_shared<HkNumber>(HkNumber({num}))"),
-                    hir::expr::ConstValue::Bool(b) => {
-                        format!("std::make_shared<HkBoolean>(HkBoolean({}))", if *b { "true" } else { "false" })
+                    hir::expr::ConstValue::Num(num) => {
+                        format!("std::make_shared<HkNumber>(HkNumber({num}))")
                     }
-                    hir::expr::ConstValue::Str(s) => format!("std::make_shared<HkString>(HkString(\"{s}\"))"),
+                    hir::expr::ConstValue::Bool(b) => {
+                        format!(
+                            "std::make_shared<HkBoolean>(HkBoolean({}))",
+                            if *b { "true" } else { "false" }
+                        )
+                    }
+                    hir::expr::ConstValue::Str(s) => {
+                        format!("std::make_shared<HkString>(HkString(\"{s}\"))")
+                    }
                 }
             }
 
@@ -275,6 +282,24 @@ impl<'a> Emitter<'a> {
                 };
 
                 format!("{opch}(v_{},v_{})", left.name, right.name)
+            }
+
+            // Code block
+            hir::expr::Expr::Block { ty: _, insts } => {
+                if insts.len() == 0 {
+                    format!("std::make_shared<HkNone>(HkNone())")
+                } else {
+                    // All the instructions but the last
+                    let mut last = None;
+                    for inst in insts {
+                        let res = self.emit_expr(scope, inst);
+                        res.add_if_free(scope);
+                        last = Some(res);
+                    }
+                    // The last one
+                    let last = last.expect("There is at least one element in the list");
+                    return last;
+                }
             }
 
             // Other binary operator
