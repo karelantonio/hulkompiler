@@ -351,6 +351,42 @@ impl<'a> Emitter<'a> {
                 return res;
             }
 
+            // Now, the important, the branch instruction
+            hir::expr::Expr::Branch { ty, cond, ontrue, onfalse } => {
+                // First delare where we want our result to be store
+                let ty = self.ty_to_str(ty).to_string();
+                let var = self.alloc_var();
+                scope.outp.push(Instruction::Line(format!("  shp<{ty}> v_{var};")));
+
+                let mut condscope = self.alloc_scope();
+                let res = self.emit_expr(&mut condscope, cond);
+                scope.outp.push(Instruction::Scope(condscope));
+                res.add_if_free(scope);
+
+                // Now the conditions
+                let mut lscope = self.alloc_scope();
+                let lres = self.emit_expr(&mut lscope, ontrue);
+                //lres.add_if_free(&mut lscope); // TODO: Also check this
+                lscope.outp.push(Instruction::Line(format!("  v_{var} = v_{};", lres.name)));
+
+
+                let mut rscope = self.alloc_scope();
+                let rres = self.emit_expr(&mut rscope, onfalse);
+                //rres.add_if_free(scope); // TODO: Check this also
+                rscope.outp.push(Instruction::Line(format!("  v_{var} = v_{};", rres.name)));
+
+                scope.outp.push(Instruction::Line(format!("  if (v_{}->value){{", res.name)));
+                scope.outp.push(Instruction::Scope(lscope));
+                scope.outp.push(Instruction::Line("  }else{".into()));
+                scope.outp.push(Instruction::Scope(rscope));
+                scope.outp.push(Instruction::Line("  }".into()));
+
+                return ResRef {
+                    name: var,
+                    free: false, //TODO: Check this
+                };
+            }
+
             // Other binary operator
             _ => panic!("Dont know how to process {expr:?}"),
         };
