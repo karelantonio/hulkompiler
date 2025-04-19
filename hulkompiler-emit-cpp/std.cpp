@@ -89,19 +89,44 @@ public:
 
   virtual void _repr(std::ostream &out) override { out << value; }
 
-  HkNumber *operator-() { return new HkNumber(-value); }
-
-  HkNumber *operator+(HkNumber *&b) { return new HkNumber(value + b->value); }
-
-  HkNumber *operator-(HkNumber *&b) { return new HkNumber(value - b->value); }
-
-  HkNumber *operator*(HkNumber *&b) { return new HkNumber(value * b->value); }
-
-  HkNumber *operator/(HkNumber *&b) { return new HkNumber(value / b->value); }
+  HkNumber *pow(HkNumber *ex) {
+    return new HkNumber(std::pow(value, ex->value));
+  }
 
   long double value;
 };
 
+// Operators
+HkNumber *opadd(HkNumber *l, HkNumber *r) {
+  return new HkNumber(l->value + r->value);
+}
+HkNumber *opsub(HkNumber *l, HkNumber *r) {
+  return new HkNumber(l->value - r->value);
+}
+HkNumber *opmult(HkNumber *l, HkNumber *r) {
+  return new HkNumber(l->value * r->value);
+}
+HkNumber *opdiv(HkNumber *l, HkNumber *r) {
+  return new HkNumber(l->value / r->value);
+}
+HkBoolean *opeq(HkNumber *l, HkNumber *r) {
+  return new HkBoolean(l->value == r->value);
+}
+HkBoolean *opneq(HkNumber *l, HkNumber *r) {
+  return new HkBoolean(l->value != r->value);
+}
+HkBoolean *lte(HkNumber *l, HkNumber *r) {
+  return new HkBoolean(l->value <= r->value);
+}
+HkBoolean *oplt(HkNumber *l, HkNumber *r) {
+  return new HkBoolean(l->value < r->value);
+}
+HkBoolean *opgte(HkNumber *l, HkNumber *r) {
+  return new HkBoolean(l->value >= r->value);
+}
+HkBoolean *opgt(HkNumber *l, HkNumber *r) {
+  return new HkBoolean(l->value > r->value);
+}
 // Print an object or its representation
 HkObject *hk_print(HkObject *obj) {
   obj->_repr(std::cout);

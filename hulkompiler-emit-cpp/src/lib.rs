@@ -213,6 +213,50 @@ impl<'a> Emitter<'a> {
                 format!("v_{left}->cat(v_{right})")
             }
 
+            // Binary operator (Pow)
+            hir::expr::Expr::BinOp {
+                op: hir::ops::Op::Pow,
+                ty: _,
+                left,
+                right,
+            } => {
+                let left = self.emit_expr(scope, left);
+                scope.vars.push(left);
+                let right = self.emit_expr(scope, right);
+                scope.vars.push(right);
+                format!("v_{left}->pow({right})")
+            }
+
+            // Binary operator
+            hir::expr::Expr::BinOp {
+                op,
+                ty: _,
+                left,
+                right,
+            } => {
+                let left = self.emit_expr(scope, left);
+                scope.vars.push(left);
+                let right = self.emit_expr(scope, right);
+                scope.vars.push(right);
+                let opch = match op {
+                    hir::ops::Op::Add => "opadd",
+                    hir::ops::Op::Sub => "opsub",
+                    hir::ops::Op::Mul => "opmult",
+                    hir::ops::Op::Div => "opdiv",
+                    hir::ops::Op::And => "opand",
+                    hir::ops::Op::Or => "opor",
+                    hir::ops::Op::Eq => "opeq",
+                    hir::ops::Op::Neq => "opneq",
+                    hir::ops::Op::Ge => "opgte",
+                    hir::ops::Op::Gt => "opgt",
+                    hir::ops::Op::Le => "oplte",
+                    hir::ops::Op::Lt => "oplt",
+                    hir::ops::Op::Pow | hir::ops::Op::Cat => unreachable!(),
+                };
+
+                format!("{opch}(v_{left},v_{right})")
+            }
+
             // Other binary operator
             _ => panic!("Dont know how to process {expr:?}"),
         };
