@@ -347,16 +347,25 @@ impl<'a> Emitter<'a> {
                 };
 
                 let res = self.emit_expr(scope, expr);
-                scope.outp.push(Instruction::Line(format!("  {vname} = v_{};", res.name)));
+                scope
+                    .outp
+                    .push(Instruction::Line(format!("  {vname} = v_{};", res.name)));
                 return res;
             }
 
             // Now, the important, the branch instruction
-            hir::expr::Expr::Branch { ty, cond, ontrue, onfalse } => {
+            hir::expr::Expr::Branch {
+                ty,
+                cond,
+                ontrue,
+                onfalse,
+            } => {
                 // First delare where we want our result to be store
                 let ty = self.ty_to_str(ty).to_string();
                 let var = self.alloc_var();
-                scope.outp.push(Instruction::Line(format!("  shp<{ty}> v_{var};")));
+                scope
+                    .outp
+                    .push(Instruction::Line(format!("  shp<{ty}> v_{var};")));
 
                 let mut condscope = self.alloc_scope();
                 let res = self.emit_expr(&mut condscope, cond);
@@ -367,15 +376,20 @@ impl<'a> Emitter<'a> {
                 let mut lscope = self.alloc_scope();
                 let lres = self.emit_expr(&mut lscope, ontrue);
                 //lres.add_if_free(&mut lscope); // TODO: Also check this
-                lscope.outp.push(Instruction::Line(format!("  v_{var} = v_{};", lres.name)));
-
+                lscope
+                    .outp
+                    .push(Instruction::Line(format!("  v_{var} = v_{};", lres.name)));
 
                 let mut rscope = self.alloc_scope();
                 let rres = self.emit_expr(&mut rscope, onfalse);
                 //rres.add_if_free(scope); // TODO: Check this also
-                rscope.outp.push(Instruction::Line(format!("  v_{var} = v_{};", rres.name)));
+                rscope
+                    .outp
+                    .push(Instruction::Line(format!("  v_{var} = v_{};", rres.name)));
 
-                scope.outp.push(Instruction::Line(format!("  if (v_{}->value){{", res.name)));
+                scope
+                    .outp
+                    .push(Instruction::Line(format!("  if (v_{}->value){{", res.name)));
                 scope.outp.push(Instruction::Scope(lscope));
                 scope.outp.push(Instruction::Line("  }else{".into()));
                 scope.outp.push(Instruction::Scope(rscope));
@@ -387,8 +401,36 @@ impl<'a> Emitter<'a> {
                 };
             }
 
-            // Other binary operator
-            _ => panic!("Dont know how to process {expr:?}"),
+            // A loop
+            hir::expr::Expr::Loop { ty, cond, body } => {
+                let resvar = self.alloc_var();
+
+                let mut condscope = self.alloc_scope();
+                let condres = self.emit_expr(&mut condscope, cond);
+                condres.add_if_free(scope);
+                let mut exprscope = self.alloc_scope();
+                let exprres = self.emit_expr(&mut exprscope, &body);
+                exprres.add_if_free(scope);
+
+                let ty = self.ty_to_str(ty);
+                scope.outp.push(Instruction::Line(format!(
+                    "  shp<{ty}> v_{resvar} = std::make_shared<HkNone>(HkNone());"
+                )));
+                scope.outp.push(Instruction::Line("  while(1){".into()));
+                scope.outp.push(Instruction::Scope(condscope));
+                scope.outp.push(Instruction::Line(format!(
+                    "  if(!v_{}->value)break;",
+                    condres.name
+                )));
+                scope.outp.push(Instruction::Scope(exprscope));
+                scope.outp.push(Instruction::Line(format!("  v_{resvar} = v_{};", exprres.name)));
+                scope.outp.push(Instruction::Line("  }".into()));
+
+                return ResRef {
+                    name: resvar,
+                    free: false, //TODO: Also check this
+                };
+            }
         };
         let res = self.alloc_var();
         let ty = self.ty_to_str(&expr.ty());
