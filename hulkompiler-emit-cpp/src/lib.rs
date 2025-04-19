@@ -34,6 +34,20 @@ pub enum Instruction {
     Scope(ScopeBuilder),
 }
 
+/// A way to access the result of [`Emitter::emit_expr`]
+pub struct ResRef {
+    name: usize,
+    free: bool,
+}
+
+impl ResRef {
+    fn add_if_free(&self, scope: &mut ScopeBuilder) {
+        if self.free {
+            scope.vars.push(self.name);
+        }
+    }
+}
+
 /// A basic code generator for C++
 pub struct Emitter<'a> {
     unit: &'a hir::unit::Unit,
@@ -93,7 +107,7 @@ impl<'a> Emitter<'a> {
         // Now the entry point
         let mut sco = inst.alloc_scope();
         let e = inst.emit_expr(&mut sco, &unit.expr);
-        sco.vars.push(e);
+        e.add_if_free(&mut sco);
 
         inst.outp.push("int main() {".into());
         sco.dump_to(&mut inst.outp);
@@ -111,7 +125,7 @@ impl<'a> Emitter<'a> {
         let args = fun
             .args
             .iter()
-            .map(|arg| format!("{} {}", self.ty_to_str(&arg.ty), arg.name))
+            .map(|arg| format!("{} *hkp_{}", self.ty_to_str(&arg.ty), arg.name))
             .collect::<Vec<_>>()
             .join(",");
 
@@ -122,7 +136,7 @@ impl<'a> Emitter<'a> {
                 let mut scope = self.alloc_scope();
                 let last = self.emit_expr(&mut scope, expr);
                 scope.dump_to(&mut self.outp);
-                self.outp.push(format!("  return v_{last};"));
+                self.outp.push(format!("  return v_{};", last.name));
             }
             _ => (),
         }
@@ -131,7 +145,8 @@ impl<'a> Emitter<'a> {
     }
 
     /// Emit an expression and return in which variable the result is (r_<RETURN>)
-    fn emit_expr(&mut self, scope: &mut ScopeBuilder, expr: &hir::expr::Expr) -> usize {
+    fn emit_expr(&mut self, scope: &mut ScopeBuilder, expr: &hir::expr::Expr) -> ResRef {
+        let mut free = true;
         let ex = match &expr {
             // A constant
             hir::expr::Expr::Const { cons, ty: _ } => {
@@ -153,8 +168,8 @@ impl<'a> Emitter<'a> {
                 // Repr if needed
                 if *ty == hir::ty::Ty::Str && expr.ty() != hir::ty::Ty::Str {
                     let res = self.emit_expr(scope, expr);
-                    scope.vars.push(res);
-                    format!("new HkString(v_{res})")
+                    res.add_if_free(scope);
+                    format!("new HkString(v_{})", res.name)
                 } else {
                     return self.emit_expr(scope, expr);
                 }
@@ -166,7 +181,12 @@ impl<'a> Emitter<'a> {
                     .unit
                     .lookup_var(var)
                     .expect("Variable not found, program in a bad state");
-                format!("hkv_{}", var.name)
+                free = false;
+                match var.kind {
+                    hir::expr::VarKind::Local => format!("l_{}", var.id.id()),
+                    hir::expr::VarKind::Param => format!("hkp_{}", var.name),
+                    hir::expr::VarKind::Global => format!("hkv_{}", var.name),
+                }
             }
 
             // A function call
@@ -180,8 +200,8 @@ impl<'a> Emitter<'a> {
                 let mut fargs = Vec::new();
                 for arg in args {
                     let res = self.emit_expr(scope, arg);
-                    scope.vars.push(res);
-                    fargs.push(format!("v_{}", res));
+                    res.add_if_free(scope);
+                    fargs.push(format!("v_{}", res.name));
                 }
 
                 format!("hk_{name}({})", fargs.join(","))
@@ -195,8 +215,8 @@ impl<'a> Emitter<'a> {
                 };
 
                 let vr = self.emit_expr(scope, expr);
-                scope.vars.push(vr);
-                format!("{op}v_{vr}")
+                vr.add_if_free(scope);
+                format!("{op}v_{}", vr.name)
             }
 
             // Binary operator (concat)
@@ -207,10 +227,10 @@ impl<'a> Emitter<'a> {
                 right,
             } => {
                 let left = self.emit_expr(scope, left);
-                scope.vars.push(left);
+                left.add_if_free(scope);
                 let right = self.emit_expr(scope, right);
-                scope.vars.push(right);
-                format!("v_{left}->cat(v_{right})")
+                right.add_if_free(scope);
+                format!("v_{}->cat(v_{})", left.name, right.name)
             }
 
             // Binary operator (Pow)
@@ -221,10 +241,10 @@ impl<'a> Emitter<'a> {
                 right,
             } => {
                 let left = self.emit_expr(scope, left);
-                scope.vars.push(left);
+                left.add_if_free(scope);
                 let right = self.emit_expr(scope, right);
-                scope.vars.push(right);
-                format!("v_{left}->pow({right})")
+                right.add_if_free(scope);
+                format!("v_{}->pow({})", left.name, right.name)
             }
 
             // Binary operator
@@ -235,9 +255,9 @@ impl<'a> Emitter<'a> {
                 right,
             } => {
                 let left = self.emit_expr(scope, left);
-                scope.vars.push(left);
+                left.add_if_free(scope);
                 let right = self.emit_expr(scope, right);
-                scope.vars.push(right);
+                right.add_if_free(scope);
                 let opch = match op {
                     hir::ops::Op::Add => "opadd",
                     hir::ops::Op::Sub => "opsub",
@@ -254,7 +274,7 @@ impl<'a> Emitter<'a> {
                     hir::ops::Op::Pow | hir::ops::Op::Cat => unreachable!(),
                 };
 
-                format!("{opch}(v_{left},v_{right})")
+                format!("{opch}(v_{},v_{})", left.name, right.name)
             }
 
             // Other binary operator
@@ -266,6 +286,6 @@ impl<'a> Emitter<'a> {
             .outp
             .push(Instruction::Line(format!("  {ty}* v_{res} = {ex};")));
 
-        res
+        ResRef { name: res, free }
     }
 }
