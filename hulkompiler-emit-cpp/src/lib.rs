@@ -22,10 +22,10 @@ impl ScopeBuilder {
         }
 
         // Free the variables
-        self.vars.reverse();
+        /*self.vars.reverse();
         for var in self.vars {
             to.push(format!("  delete v_{var};"));
-        }
+        }*/
     }
 }
 
@@ -125,11 +125,11 @@ impl<'a> Emitter<'a> {
         let args = fun
             .args
             .iter()
-            .map(|arg| format!("{} *hkp_{}", self.ty_to_str(&arg.ty), arg.name))
+            .map(|arg| format!("shp<{}> hkp_{}", self.ty_to_str(&arg.ty), arg.name))
             .collect::<Vec<_>>()
             .join(",");
 
-        self.outp.push(format!("{ret} *hk_{name}({args}) {{"));
+        self.outp.push(format!("shp<{ret}> hk_{name}({args}) {{"));
 
         match &fun.body {
             hir::expr::FunBody::Expr(expr) => {
@@ -155,11 +155,11 @@ impl<'a> Emitter<'a> {
                     .lookup_const(cons)
                     .expect("Program is in a bad state");
                 match &cons.value {
-                    hir::expr::ConstValue::Num(num) => format!("new HkNumber({num})"),
+                    hir::expr::ConstValue::Num(num) => format!("std::make_shared<HkNumber>(HkNumber({num}))"),
                     hir::expr::ConstValue::Bool(b) => {
-                        format!("new HkBoolean({})", if *b { "true" } else { "false" })
+                        format!("std::make_shared<HkBoolean>(HkBoolean({}))", if *b { "true" } else { "false" })
                     }
-                    hir::expr::ConstValue::Str(s) => format!("new HkString(\"{s}\")"),
+                    hir::expr::ConstValue::Str(s) => format!("std::make_shared<HkString>(HkString(\"{s}\"))"),
                 }
             }
 
@@ -284,7 +284,7 @@ impl<'a> Emitter<'a> {
         let ty = self.ty_to_str(&expr.ty());
         scope
             .outp
-            .push(Instruction::Line(format!("  {ty}* v_{res} = {ex};")));
+            .push(Instruction::Line(format!("  shp<{ty}> v_{res} = {ex};")));
 
         ResRef { name: res, free }
     }

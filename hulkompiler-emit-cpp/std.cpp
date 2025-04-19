@@ -6,6 +6,8 @@
 #include <sstream>
 #include <string>
 
+template <typename T> using shp = std::shared_ptr<T>;
+
 // Forward declarations
 class HkObject;
 class HkString;
@@ -26,7 +28,7 @@ public:
     return out.str();
   }
 
-  virtual HkString *cat(HkObject *right);
+  virtual shp<HkString> cat(shp<HkObject> right);
 };
 
 // A string type
@@ -34,7 +36,7 @@ class HkString : public HkObject {
 public:
   HkString(std::string val) : value(std::make_shared<std::string>(val)) {}
 
-  HkString(HkObject *obj) {
+  HkString(shp<HkObject> obj) {
     std::ostringstream out;
     obj->_repr(out);
     value = std::make_shared<std::string>(out.str());
@@ -44,17 +46,17 @@ public:
 
   std::shared_ptr<std::string> value;
 
-  HkString *cat(HkObject *right) override;
+  shp<HkString> cat(shp<HkObject> right) override;
 };
 
-HkString *HkObject::cat(HkObject *right) {
+shp<HkString> HkObject::cat(shp<HkObject> right) {
   std::string l = to_string(), r = right->to_string();
-  return new HkString(l + r);
+  return std::make_shared<HkString>(HkString(l + r));
 }
 
-HkString *HkString::cat(HkObject *right) {
+shp<HkString> HkString::cat(shp<HkObject> right) {
   std::string r = right->to_string();
-  return new HkString(*value + r);
+  return std::make_shared<HkString>(HkString(*value + r));
 }
 
 // The boolean type
@@ -69,7 +71,9 @@ public:
       out << "false";
   }
 
-  HkBoolean *operator!() { return new HkBoolean(!value); }
+  shp<HkBoolean> operator!() {
+    return std::make_shared<HkBoolean>(HkBoolean(!value));
+  }
 
   bool value;
 };
@@ -89,71 +93,80 @@ public:
 
   virtual void _repr(std::ostream &out) override { out << value; }
 
-  HkNumber *pow(HkNumber *ex) {
-    return new HkNumber(std::pow(value, ex->value));
+  shp<HkNumber> pow(shp<HkNumber> ex) {
+    return std::make_shared<HkNumber>(HkNumber(std::pow(value, ex->value)));
   }
 
   long double value;
 };
 
 // Operators
-HkNumber *opadd(HkNumber *l, HkNumber *r) {
-  return new HkNumber(l->value + r->value);
+shp<HkNumber> opadd(shp<HkNumber> l, shp<HkNumber> r) {
+  return std::make_shared<HkNumber>(HkNumber(l->value + r->value));
 }
-HkNumber *opsub(HkNumber *l, HkNumber *r) {
-  return new HkNumber(l->value - r->value);
+shp<HkNumber> opsub(shp<HkNumber> l, shp<HkNumber> r) {
+  return std::make_shared<HkNumber>(HkNumber(l->value - r->value));
 }
-HkNumber *opmult(HkNumber *l, HkNumber *r) {
-  return new HkNumber(l->value * r->value);
+shp<HkNumber> opmult(shp<HkNumber> l, shp<HkNumber> r) {
+  return std::make_shared<HkNumber>(HkNumber(l->value * r->value));
 }
-HkNumber *opdiv(HkNumber *l, HkNumber *r) {
-  return new HkNumber(l->value / r->value);
+shp<HkNumber> opdiv(shp<HkNumber> l, shp<HkNumber> r) {
+  return std::make_shared<HkNumber>(HkNumber(l->value / r->value));
 }
-HkBoolean *opeq(HkNumber *l, HkNumber *r) {
-  return new HkBoolean(l->value == r->value);
+shp<HkBoolean> opeq(shp<HkNumber> l, shp<HkNumber> r) {
+  return std::make_shared<HkBoolean>(HkBoolean(l->value == r->value));
 }
-HkBoolean *opneq(HkNumber *l, HkNumber *r) {
-  return new HkBoolean(l->value != r->value);
+shp<HkBoolean> opneq(shp<HkNumber> l, shp<HkNumber> r) {
+  return std::make_shared<HkBoolean>(HkBoolean(l->value != r->value));
 }
-HkBoolean *lte(HkNumber *l, HkNumber *r) {
-  return new HkBoolean(l->value <= r->value);
+shp<HkBoolean> lte(shp<HkNumber> l, shp<HkNumber> r) {
+  return std::make_shared<HkBoolean>(HkBoolean(l->value <= r->value));
 }
-HkBoolean *oplt(HkNumber *l, HkNumber *r) {
-  return new HkBoolean(l->value < r->value);
+shp<HkBoolean> oplt(shp<HkNumber> l, shp<HkNumber> r) {
+  return std::make_shared<HkBoolean>(HkBoolean(l->value < r->value));
 }
-HkBoolean *opgte(HkNumber *l, HkNumber *r) {
-  return new HkBoolean(l->value >= r->value);
+shp<HkBoolean> opgte(shp<HkNumber> l, shp<HkNumber> r) {
+  return std::make_shared<HkBoolean>(HkBoolean(l->value >= r->value));
 }
-HkBoolean *opgt(HkNumber *l, HkNumber *r) {
-  return new HkBoolean(l->value > r->value);
+shp<HkBoolean> opgt(shp<HkNumber> l, shp<HkNumber> r) {
+  return std::make_shared<HkBoolean>(HkBoolean(l->value > r->value));
 }
 // Print an object or its representation
-HkObject *hk_print(HkObject *obj) {
+shp<HkObject> hk_print(shp<HkObject> obj) {
   obj->_repr(std::cout);
   std::cout << std::endl;
-  return new HkNone();
+  return std::make_shared<HkNone>(HkNone());
 }
 
 // Get the floor division
-HkNumber *hk_floor(HkNumber *num) {
-  return new HkNumber(std::floor(num->value));
+shp<HkNumber> hk_floor(shp<HkNumber> num) {
+  return std::make_shared<HkNumber>(HkNumber(std::floor(num->value)));
 }
 
 // Get the sine
-HkNumber *hk_sin(HkNumber *num) { return new HkNumber(std::sin(num->value)); }
+shp<HkNumber> hk_sin(shp<HkNumber> num) {
+  return std::make_shared<HkNumber>(HkNumber(std::sin(num->value)));
+}
 
 // Get the cosine
-HkNumber *hk_cos(HkNumber *num) { return new HkNumber(std::cos(num->value)); }
+shp<HkNumber> hk_cos(shp<HkNumber> num) {
+  return std::make_shared<HkNumber>(HkNumber(std::cos(num->value)));
+}
 
 // The exponential function
-HkNumber *hk_exp(HkNumber *num) { return new HkNumber(std::exp(num->value)); }
+shp<HkNumber> hk_exp(shp<HkNumber> num) {
+  return std::make_shared<HkNumber>(HkNumber(std::exp(num->value)));
+}
 
 // The square root function
-HkNumber *hk_sqrt(HkNumber *num) { return new HkNumber(std::sqrt(num->value)); }
+shp<HkNumber> hk_sqrt(shp<HkNumber> num) {
+  return std::make_shared<HkNumber>(HkNumber(std::sqrt(num->value)));
+}
 
 // The logarithm function
-HkNumber *hk_log(HkNumber *base, HkNumber *arg) {
-  return new HkNumber(std::log(arg->value) / std::log(arg->value));
+shp<HkNumber> hk_log(shp<HkNumber> base, shp<HkNumber> arg) {
+  return std::make_shared<HkNumber>(
+      HkNumber(std::log(arg->value) / std::log(arg->value)));
 }
 
 std::random_device rd;
@@ -161,6 +174,8 @@ std::mt19937 rng(rd());
 std::uniform_real_distribution<> dist(0.0, 1.0);
 
 // The rand function
-HkNumber *hk_rand() { return new HkNumber(dist(rng)); }
+shp<HkNumber> hk_rand() {
+  return std::make_shared<HkNumber>(HkNumber(dist(rng)));
+}
 
-HkNumber *hk_PI = new HkNumber(std::acos(-1));
+shp<HkNumber> hk_PI = std::make_shared<HkNumber>(HkNumber(std::acos(-1)));
