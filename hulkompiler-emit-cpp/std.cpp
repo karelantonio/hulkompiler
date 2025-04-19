@@ -178,4 +178,4 @@ shp<HkNumber> hk_rand() {
   return std::make_shared<HkNumber>(HkNumber(dist(rng)));
 }
 
-shp<HkNumber> hk_PI = std::make_shared<HkNumber>(HkNumber(std::acos(-1)));
+shp<HkNumber> hkv_PI = std::make_shared<HkNumber>(HkNumber(std::acos(-1)));
