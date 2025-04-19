@@ -334,6 +334,23 @@ impl<'a> Emitter<'a> {
                 return res;
             }
 
+            // Reassign a variable
+            hir::expr::Expr::Reassign { ty: _, var, expr } => {
+                let var = self
+                    .unit
+                    .lookup_var(var)
+                    .expect("Variable not found, program in a bad state");
+                let vname = match var.kind {
+                    hir::expr::VarKind::Local => format!("l_{}", var.id.id()),
+                    hir::expr::VarKind::Param => format!("hkp_{}", var.name),
+                    hir::expr::VarKind::Global => format!("hkv_{}", var.name),
+                };
+
+                let res = self.emit_expr(scope, expr);
+                scope.outp.push(Instruction::Line(format!("  {vname} = v_{};", res.name)));
+                return res;
+            }
+
             // Other binary operator
             _ => panic!("Dont know how to process {expr:?}"),
         };
