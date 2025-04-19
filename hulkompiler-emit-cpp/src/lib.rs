@@ -251,7 +251,7 @@ impl<'a> Emitter<'a> {
                 left.add_if_free(scope);
                 let right = self.emit_expr(scope, right);
                 right.add_if_free(scope);
-                format!("v_{}->pow({})", left.name, right.name)
+                format!("v_{}->pow(v_{})", left.name, right.name)
             }
 
             // Binary operator
