@@ -758,10 +758,19 @@ impl TypeChecker {
                     });
                 }
 
-                let body = self.to_expr(body)?;
+                let mut body = self.to_expr(body)?;
+
+                if body.ty() != Ty::Obj {
+                    // Implicit cast
+                    body = Expr::ImplicitCast {
+                        ty: Ty::Obj,
+                        expr: Box::new(body),
+                    }
+                }
 
                 Expr::Loop {
-                    ty: body.ty(),
+                    ty: Ty::Obj, // Because we may not run the loop, so we need to ensure that a value is assigned
+                                 // to the return
                     cond: Box::new(cond),
                     body: Box::new(body),
                 }
