@@ -1,0 +1,5 @@
+let a = 10 in {
+    print(a);
+    print(a := 20);
+    print(a);
+};

@@ -1,0 +1,7 @@
+function square(n: Number): Number => n*n;
+
+function cube(n: Number): Number {
+    n*n*n;
+}
+
+print(square(10) @ " " @ cube(10));

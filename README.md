@@ -4,6 +4,8 @@ Toy compiler of the HULK programming language(s) specified [here](https://github
 
 Note that this project is not meant to any serious use, just focused on learning how to write compilers.
 
+See the [examples](examples) directory to get a glimpse of the HULK language.
+
 ## Table of contents
 
 1. [Install on linux](#install-on-linux)

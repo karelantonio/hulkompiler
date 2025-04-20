@@ -1,0 +1,15 @@
+function mod(n: Number, m: Number): Number =>
+    n - floor(n/m)*m;
+
+function is_even(n: Number): Boolean =>
+    0 == mod(n, 2);
+
+function check_even(n: Number): Object =>
+    print(n @ " is even? " @  if(is_even(n)) "yes" else "no" );
+
+{
+    check_even(5);
+    check_even(6);
+    check_even(7);
+    check_even(8);
+};

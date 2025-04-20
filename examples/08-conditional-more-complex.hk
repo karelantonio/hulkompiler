@@ -1,0 +1,8 @@
+function mod(n: Number, m: Number): Number =>
+    n - floor(n/m)*m;
+
+function gcd(a: Number, b: Number): Number =>
+    if(b==0) a
+    else gcd(b, mod(a,b));
+
+print("GCD of 10 and 25 is: " @ gcd(10, 25));
