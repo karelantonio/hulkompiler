@@ -48,7 +48,12 @@ print(1 + say_hello(" :D  "));
 And run it with:
 
 ```bash
-./target/release/hulkcompiler emit-py whatever.hk | python3 -
+./target/release/hulkcompiler emit-cpp whatever.hk > program.cpp
+# Now inspect the source generated if you want
+# Compile
+g++ program.cpp -o program
+# Run
+./program
 ```
 
 ## Structure of the compiler
