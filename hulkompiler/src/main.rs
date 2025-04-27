@@ -7,6 +7,7 @@ use anyhow::{bail, Result};
 use std::{
     env::{args, Args},
     ffi::OsStr,
+    io::{self, Read},
     path::Path,
 };
 use hulkompiler_emit_py as emit_py;
@@ -14,6 +15,17 @@ use hulkompiler_ast as ast;
 use hulkompiler_hir as hir;
 use hulkompiler_emit_cpp as emit_cpp;
 
+
+fn read_input_to_string<P: AsRef<Path> + std::cmp::PartialEq<&'static str>>(file: P) -> io::Result<String> {
+    if file == "-" {
+        let mut buf = String::new();
+        std::io::stdin().read_to_string(&mut buf)?;
+
+        Ok(buf)
+    } else {
+        std::fs::read_to_string(file)
+    }
+}
 
 /// Dump the lex result
 fn cmd_dumplex(binname: &str, args: Args) -> Result<()> {
@@ -36,7 +48,7 @@ fn cmd_dumplex(binname: &str, args: Args) -> Result<()> {
     let file = file.expect("Should not be None, see ArgParser");
 
     // Read the contents
-    let data = std::fs::read_to_string(file)?;
+    let data = read_input_to_string(file)?;
 
     // Lex the contents
     let res = ast::lex::tokenize_data(&data)?;
@@ -71,7 +83,7 @@ fn cmd_dumpast(binname: &str, args: Args) -> Result<()> {
     let file = file.expect("Should not be None, see ArgParser");
 
     // Read the file
-    let content = std::fs::read_to_string(file)?;
+    let content = read_input_to_string(file)?;
 
     // Parse
     let res = ast::Parser::parse(&content)?;
@@ -100,7 +112,7 @@ fn cmd_emitpy(binname: &str, args: Args) -> Result<()> {
     let file = file.expect("Should not be None, see ArgParser"); // Its ok
 
     // Read the contents
-    let content = std::fs::read_to_string(&file)?;
+    let content = read_input_to_string(&file)?;
 
     // Parse
     let ast = ast::Parser::parse(&content)?;
@@ -128,7 +140,7 @@ fn cmd_emitcpp(binname: &str, args: Args) -> Result<()> {
     let file = file.expect("Should not be None, see ArgParser"); // Its ok
 
     // Read the contents
-    let content = std::fs::read_to_string(&file)?;
+    let content = read_input_to_string(&file)?;
 
     // Parse
     let ast = ast::Parser::parse(&content)?;

@@ -171,7 +171,7 @@ impl ArgParser {
         // Check if is an arg
         if arg.starts_with("--") {
             return Err(ArgError::UnexpectedArg(arg));
-        } else if arg.starts_with("-") {
+        } else if arg != "-" && arg.starts_with("-") {
             return Err(ArgError::UnexpectedOption(arg));
         }
 
